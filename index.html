@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zen Todo — Gestionnaire de tâches pour Firefox</title>
+<meta name="description" content="Zen Todo : extension de gestion de tâches pour Firefox. Vos données restent chez vous, synchronisation optionnelle via votre propre Google Drive. / A browser task-list extension. Your data stays with you.">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%236D5AE6'/%3E%3Cstop offset='1' stop-color='%235344C4'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='512' height='512' rx='110' fill='url(%23g)'/%3E%3Ccircle cx='200' cy='185' r='115' fill='%23fff'/%3E%3Ccircle cx='235' cy='150' r='115' fill='url(%23g)'/%3E%3Cpath d='M250 330L325 400L440 240' fill='none' stroke='%23fff' stroke-width='40' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; line-height: 1.65; color: #23242e; background: #fafafc; }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 0 24px; }
+  header.hero { background: linear-gradient(160deg, #6D5AE6 0%, #5344C4 100%); color: #fff; padding: 72px 0 64px; }
+  .brand { display: flex; align-items: center; gap: 22px; }
+  .brand svg { width: 108px; height: 108px; flex: none; border-radius: 24px; box-shadow: 0 8px 28px rgba(0,0,0,.28); }
+  h1 { font-size: 42px; letter-spacing: -.5px; }
+  .tagline { font-size: 19px; opacity: .95; margin-top: 4px; }
+  .sub { margin-top: 18px; font-size: 16px; opacity: .88; max-width: 640px; }
+  .btn { display: inline-block; background: #fff; color: #4a3cc9; font-weight: 700; padding: 13px 26px; border-radius: 999px; text-decoration: none; margin-top: 26px; box-shadow: 0 4px 14px rgba(0,0,0,.22); }
+  .btn:hover { transform: translateY(-1px); }
+  main section { padding: 38px 0 6px; }
+  h2 { font-size: 26px; color: #4638b8; margin-bottom: 14px; }
+  ul.feat { list-style: none; display: grid; grid-template-columns: 1fr 1fr; gap: 10px 26px; }
+  ul.feat li { padding-left: 28px; position: relative; }
+  ul.feat li::before { content: "✓"; position: absolute; left: 0; top: 0; color: #6D5AE6; font-weight: 700; }
+  .panel { background: #fff; border: 1px solid #e4e2f2; border-radius: 14px; padding: 22px 26px; margin-top: 16px; }
+  .panel ul { margin-left: 20px; }
+  a { color: #4a3cc9; }
+  .lang-sep { border: none; border-top: 1px solid #e4e2f2; margin: 34px 0 0; }
+  footer { margin-top: 56px; padding: 26px 0 40px; border-top: 1px solid #e4e2f2; font-size: 14.5px; color: #6b6c7a; }
+  @media (max-width: 640px) { ul.feat { grid-template-columns: 1fr; } h1 { font-size: 32px; } }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="brand">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Logo Zen Todo">
+        <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#6D5AE6"/><stop offset="1" stop-color="#5344C4"/></linearGradient></defs>
+        <rect width="512" height="512" rx="110" fill="url(#g)"/>
+        <circle cx="200" cy="185" r="115" fill="#fff"/>
+        <circle cx="235" cy="150" r="115" fill="url(#g)"/>
+        <path d="M250 330L325 400L440 240" fill="none" stroke="#fff" stroke-width="40" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <div>
+        <h1>Zen Todo</h1>
+        <p class="tagline">Vos tâches, chez vous — synchronisées via <b>votre</b> Google Drive.</p>
+      </div>
+    </div>
+    <p class="sub">Zen Todo est une extension Firefox de gestion de tâches : tâches, projets, sous-tâches, priorités,
+    rappels et synchronisation entre vos appareils. Conçue sur un principe simple : <b>vos données restent chez vous</b>.</p>
+    <a class="btn" href="https://addons.mozilla.org/firefox/addon/zen-todo/">Installer sur Firefox (gratuit)</a>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <section id="fonctionnalites">
+    <h2>Fonctionnalités</h2>
+    <ul class="feat">
+      <li>Tâches, projets et sous-tâches</li>
+      <li>Priorités, dates, heures et rappels (notifications)</li>
+      <li>Recherche, filtres et tri instantanés</li>
+      <li>Réorganisation par glisser-déposer (ou flèches)</li>
+      <li>Thèmes sombre et clair, ajustés automatiquement</li>
+      <li>Interface en français, anglais, espagnol, allemand</li>
+      <li>Synchronisation entre appareils (optionnelle)</li>
+      <li>Sauvegarde et restauration manuelles</li>
+    </ul>
+  </section>
+
+  <section id="donnees">
+    <h2>Vos données restent chez vous</h2>
+    <div class="panel">
+      <ul>
+        <li><b>Fonctionnement local d'abord</b> : vos tâches sont enregistrées dans le stockage de votre navigateur. La synchronisation est désactivée par défaut.</li>
+        <li><b>Synchronisation optionnelle via votre propre Drive</b> : si vous l'activez, vos tâches sont rangées dans un dossier privé de
+            <b>votre</b> Google Drive (zone « données d'application », accessible uniquement par Zen Todo après votre consentement).</li>
+        <li><b>Aucun serveur à nous</b> : nous ne recevons, ne voyons et ne stockons <b>aucune</b> donnée utilisateur. Aucun compte à créer chez nous.</li>
+        <li><b>Aucun suivi</b> : pas de traqueurs, pas de publicité, pas de mesure d'audience, pas de revente de données.</li>
+        <li><b>Accès réseau minimal</b> : l'extension ne communique qu'avec les domaines Google <code>googleapis.com</code> et <code>oauth2.googleapis.com</code>.</li>
+      </ul>
+      <p style="margin-top:12px">Détails complets : <a href="privacy.html"><b>Politique de confidentialité</b></a></p>
+    </div>
+  </section>
+
+  <hr class="lang-sep">
+
+  <section id="en" lang="en">
+    <h2>English summary</h2>
+    <p><b>Zen Todo</b> is a task-list extension for Firefox: tasks, projects, sub-tasks, priorities, reminders and
+    optional cross-device sync — built on one principle: <b>your data stays with you</b>.</p>
+    <div class="panel">
+      <ul>
+        <li><b>Local-first</b>: tasks are stored in your browser. Sync is off by default.</li>
+        <li><b>Optional sync via your own Drive</b>: if you enable it, tasks are stored in a private app-data folder of
+            <b>your own</b> Google Drive, accessible only by Zen Todo after your explicit consent.</li>
+        <li><b>No servers of ours</b>: we receive, see and store <b>no</b> user data. No account needed with us.</li>
+        <li><b>No tracking</b>: no trackers, no ads, no analytics, no data selling.</li>
+        <li><b>Minimal network access</b>: limited to Google domains <code>googleapis.com</code> and <code>oauth2.googleapis.com</code>.</li>
+      </ul>
+      <p style="margin-top:12px">Full details: <a href="privacy.html"><b>Privacy Policy</b></a> ·
+      Install: <a href="https://addons.mozilla.org/firefox/addon/zen-todo/">addons.mozilla.org/firefox/addon/zen-todo</a></p>
+    </div>
+  </section>
+
+  <section id="contact">
+    <h2>Contact</h2>
+    <p>Questions, assistance or security reports: <b>zentodoassist@gmail.com</b></p>
+  </section>
+
+  <footer>
+    © 2026 Zen Todo · <a href="privacy.html">Politique de confidentialité / Privacy Policy</a> · zentodoassist@gmail.com
+  </footer>
+
+</main>
+</body>
+</html>
