@@ -9,8 +9,8 @@ Extension de gestion de tâches pour Firefox — synchronisation optionnelle via
 
 <p align="center">
   <a href="https://addons.mozilla.org/firefox/addon/zen-todo/"><img alt="Installer sur Firefox" src="https://img.shields.io/badge/Firefox-Installer-FF7139?logo=firefoxbrowser&logoColor=white"></a>
-  <a href="https://railboz.github.io/"><img alt="Site officiel" src="https://img.shields.io/badge/Site-officiel-6D5AE6"></a>
-  <a href="https://railboz.github.io/privacy.html"><img alt="Politique de confidentialité" src="https://img.shields.io/badge/Confidentialit%C3%A9-Politique-5344C4"></a>
+  <a href="https://railboz.github.io/Zen-Todo/"><img alt="Site officiel" src="https://img.shields.io/badge/Site-officiel-6D5AE6"></a>
+  <a href="https://railboz.github.io/Zen-Todo/privacy.html"><img alt="Politique de confidentialité" src="https://img.shields.io/badge/Confidentialit%C3%A9-Politique-5344C4"></a>
 </p>
 
 ---
@@ -41,7 +41,7 @@ directement par **votre propre Google Drive**.
 - **Réseau minimal** : l'extension ne communique qu'avec `googleapis.com` et `oauth2.googleapis.com`.
 - **Révocable à tout moment** depuis l'extension ou sur [myaccount.google.com/permissions](https://myaccount.google.com/permissions).
 
-📄 Politique complète : **[railboz.github.io/privacy.html](https://railboz.github.io/privacy.html)**
+📄 Politique complète : **[railboz.github.io/Zen-Todo/privacy.html](https://railboz.github.io/Zen-Todo/privacy.html)**
 
 ## 📦 Installation
 
@@ -101,7 +101,7 @@ stays in your browser, and optional cross-device sync stores everything in a pri
 - Optional Google Drive sync (`appDataFolder` scope), revocable anytime
 
 **Install:** [addons.mozilla.org/firefox/addon/zen-todo](https://addons.mozilla.org/firefox/addon/zen-todo/) ·
-**Privacy:** [railboz.github.io/privacy.html](https://railboz.github.io/privacy.html) ·
+**Privacy:** [railboz.github.io/Zen-Todo/privacy.html](https://railboz.github.io/Zen-Todo/privacy.html) ·
 **Contact:** zentodoassist@gmail.com
 
 ---
