@@ -1506,7 +1506,12 @@ api.storage.onChanged.addListener((ch) => {
     if (editingId) pendingTasks = ch.tasks.newValue;   // édition en cours : reconstruire la liste effacerait la saisie
     else { tasks = normTasks(ch.tasks.newValue); scheduleRender(); }
   }
-  if (ch.lang) applyLang(isLang(ch.lang.newValue) ? ch.lang.newValue : defaultLang());   // null = langue automatique
+  // La synchro réécrit `lang` à chaque passage (sync.js) : ne reconstruire que si la langue change,
+  // sinon chaque synchro relancerait un rendu complet + applyStaticI18n + les 3 commands.getAll().
+  if (ch.lang) {
+    const l = isLang(ch.lang.newValue) ? ch.lang.newValue : defaultLang();   // null = langue automatique
+    if (l !== LANG) applyLang(l);
+  }
   if (ch.theme && ch.theme.newValue) { setTheme(ch.theme.newValue); applyThemeUI(); }
   if (ch.textSize) applyTextSize(ch.textSize.newValue);
   if (ch.defaultPriority && PRIOS.includes(ch.defaultPriority.newValue)) { defaultPriority = ch.defaultPriority.newValue; $("new-priority").value = defaultPriority; renderPrioChips(); }
