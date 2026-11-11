@@ -1145,7 +1145,7 @@ function resetWipe() { wipeArmed = false; $("wipe").classList.remove("armed"); $
 $("wipe").addEventListener("click", () => {
   if (!wipeArmed) { wipeArmed = true; $("wipe").classList.add("armed"); $("wipe").textContent = t("confirmDelete"); return; }
   hideToast();   // une annulation de suppression ne doit pas ressusciter une tâche après l'effacement
-  if (tasks.length || projects.length) api.storage.local.set({ backup: { time: Date.now(), tasks, projects } }).then(renderSyncUI);   // filet de sécurité AVANT l'effacement
+  if (tasks.length || projects.length) api.storage.local.set({ backup: { time: Date.now(), tasks, projects } }).then(() => renderSyncUI());   // filet de sécurité AVANT l'effacement
   const now = Date.now();
   tasks.forEach(x => { if (safeId(x.id)) syncDel.t[x.id] = now; });   // tout marquer supprimé : l'effacement se propage
   projects.forEach(p => { if (safeId(p.id)) syncDel.p[p.id] = now; });
@@ -1273,11 +1273,16 @@ function syncKey(code) {
 function syncStateText(s) { return t(syncKey(s.code)) + (s.detail ? " — " + s.detail : ""); }
 let restoreArmed = false;
 function resetRestore() { restoreArmed = false; const b = $("restore-backup"); b.classList.remove("armed"); b.textContent = t("restoreBackup"); }
-async function renderSyncUI() {
+// Clés du bloc synchro lues en une fois (compte Google compris) : un seul aller-retour au lieu de
+// deux appels séquentiels (Sync.account() puis le get des trois valeurs).
+const SYNC_READ_KEYS = { gAccount: null, syncState: null, backup: null, lastSync: 0 };
+async function renderSyncUI(snapshot) {
   const ok = Sync.available() && Sync.configured();
   $("sync-setup").hidden = ok;
-  const acct = ok ? await Sync.account() : null;
-  const { syncState, backup, lastSync } = await api.storage.local.get({ syncState: null, backup: null, lastSync: 0 });
+  // `snapshot` : valeurs déjà lues au démarrage, pour ne rien relire sur ce chemin.
+  const s = snapshot || await api.storage.local.get(SYNC_READ_KEYS);
+  const acct = (ok && s.gAccount && typeof s.gAccount === "object") ? s.gAccount : null;   // comme Sync.account()
+  const syncState = s.syncState, backup = s.backup, lastSync = s.lastSync;
   $("sync-signin").hidden = !(ok && !acct);
   $("sync-on").hidden = !(ok && acct);
 
@@ -1392,7 +1397,7 @@ function applyTextSize(v) {
   document.querySelectorAll(".textsize").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.size === size)));
 }
 
-api.storage.local.get({ tasks: [], lang: null, defaultPriority: "medium", badge: true, theme: "dark", sortBy: null, sort: null, sound: true, projects: [], tab: "tasks", filter: "all", del: { t: {}, p: {} }, setTs: 0, textSize: "normal" }).then((s) => {
+api.storage.local.get({ tasks: [], lang: null, defaultPriority: "medium", badge: true, theme: "dark", sortBy: null, sort: null, sound: true, projects: [], tab: "tasks", filter: "all", del: { t: {}, p: {} }, setTs: 0, textSize: "normal", ...SYNC_READ_KEYS }).then((s) => {
   tasks = normTasks(s.tasks); defaultPriority = PRIOS.includes(s.defaultPriority) ? s.defaultPriority : "medium";
   filter = FILTERS.includes(s.filter) ? s.filter : "all";
   projects = normProjects(s.projects);
@@ -1413,7 +1418,7 @@ api.storage.local.get({ tasks: [], lang: null, defaultPriority: "medium", badge:
   // synchro réseau passent après la frame de rendu (l'ouverture reste fluide même si Google est
   // lent ou si la session doit être renégociée).
   requestAnimationFrame(() => {
-    renderSyncUI();
+    renderSyncUI(s);   // instantané du stockage déjà lu : aucune lecture supplémentaire
     loadShortcut();
     setTimeout(() => Sync.auto(), 0);
   });
