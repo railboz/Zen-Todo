@@ -1365,11 +1365,26 @@ function applyLang(l) {
 function applyThemeUI() {
   document.querySelectorAll(".theme").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.theme === THEME)));
 }
+// Ouverture : theme-init.js a déjà posé data-theme depuis localStorage. setTheme() réécrit
+// l'attribut et localStorage (invalidation de style + écriture disque synchrone) juste avant la
+// première construction de liste ; on ne l'appelle donc que si la valeur affichée diffère.
+function applyThemeOnStartup(th) {
+  const want = th === "light" ? "light" : "dark";
+  let stored = null;
+  try { stored = localStorage.getItem("zt-theme"); } catch (e) {}
+  if (stored === want && document.documentElement.getAttribute("data-theme") === want) { THEME = want; return; }   // THEME : global de i18n.js
+  setTheme(want);
+}
 // Taille du texte : réglage local (comme le thème), mémorisé aussi dans localStorage pour éviter un clignotement.
 function applyTextSize(v) {
   const size = (v === "small" || v === "large") ? v : "normal";
-  document.documentElement.setAttribute("data-textsize", size);
-  try { localStorage.setItem("zt-textsize", size); } catch (e) {}
+  let stored = null;
+  try { stored = localStorage.getItem("zt-textsize"); } catch (e) {}
+  // Même garde que pour le thème : rien à écrire si theme-init.js a déjà posé la bonne valeur.
+  if (stored !== size || document.documentElement.getAttribute("data-textsize") !== size) {
+    document.documentElement.setAttribute("data-textsize", size);
+    try { localStorage.setItem("zt-textsize", size); } catch (e) {}
+  }
   document.querySelectorAll(".textsize").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.size === size)));
 }
 
@@ -1386,7 +1401,7 @@ api.storage.local.get({ tasks: [], lang: null, defaultPriority: "medium", badge:
   soundOn = s.sound !== false;
   $("badge-toggle").checked = s.badge;
   $("sound-toggle").checked = soundOn;
-  setTheme(s.theme || "dark"); applyThemeUI();
+  applyThemeOnStartup(s.theme || "dark"); applyThemeUI();
   applyLang(s.lang || defaultLang());
   applyTextSize(s.textSize);
   $("new-priority").value = defaultPriority; renderPrioChips();
