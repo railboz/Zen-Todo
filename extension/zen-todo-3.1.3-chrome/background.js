@@ -126,7 +126,10 @@ if (api.tabs && needsTabAuth) {
 }
 
 /* ----- connexion Google : lancée ici (en arrière-plan) pour survivre à la fermeture du popup ----- */
-api.runtime.onMessage.addListener((m) => {
+api.runtime.onMessage.addListener((m, sender, sendResponse) => {
+  // Seule l'extension elle-même (popup, panneau latéral) peut piloter la synchro : un message venu
+  // d'ailleurs ne doit jamais déclencher de flux OAuth ni de poussée Google.
+  if (!sender || sender.id !== api.runtime.id) return;
   if (!m || typeof m.type !== "string") return;
   if (m.type === "zt:signin") run(() => Sync.signInFlow().catch(() => {}));
   if (m.type === "zt:signout") run(() => Sync.signOut().catch(() => {}));
