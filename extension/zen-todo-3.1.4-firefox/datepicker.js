@@ -1,23 +1,72 @@
 // Sélecteur de date intégré (le calendrier natif de Firefox s'ouvre derrière le popup).
 const DP_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>';
 const pad2 = (n) => String(n).padStart(2, "0");
-// Création d'élément SANS innerHTML : le texte passe par textContent, les icônes SVG (constantes du code) sont analysées puis clonées.
-const svgCache = new Map();
-function svgNode(markup) {
-  let n = svgCache.get(markup);
-  if (!n) {
-    const src = markup.includes("xmlns=") ? markup : markup.replace("<svg", '<svg xmlns="http://www.w3.org/2000/svg"');
-    n = document.importNode(new DOMParser().parseFromString(src, "image/svg+xml").documentElement, true);
-    svgCache.set(markup, n);
+// Création d'élément sans balisage HTML injecté : le texte passe par textContent, les icônes SVG (constantes du code) sont analysées puis clonées.
+/* ---------- icônes SVG : markup explicite, jamais deviné depuis une chaîne (SEC-08) ----------
+   Une icône de confiance se crée avec svgAsset() ; mk(tag, cls, task.text) n'affiche donc plus jamais
+   du texte utilisateur comme du SVG. Les chaînes d'icônes encore passées par popup.js (constantes SVG.*)
+   restent acceptées pour ne rien changer à l'affichage, mais uniquement après validation stricte :
+   balises et attributs en liste blanche, donc aucun gestionnaire on*, <script>, <foreignObject> ni
+   référence externe. Tout le reste retombe sur textContent. */
+const SVG_NS = "http://www.w3.org/2000/svg";
+const XMLNS_NS = "http://www.w3.org/2000/xmlns/";
+const SVG_MARK = Symbol("zt-svg-asset");
+const SVG_TAGS = new Set(["svg", "g", "path", "rect", "circle", "ellipse", "line", "polyline", "polygon"]);
+const SVG_ATTRS = new Set([
+  "viewBox", "width", "height", "x", "y", "rx", "ry", "cx", "cy", "r", "d", "points",
+  "fill", "fill-opacity", "fill-rule", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin",
+  "stroke-miterlimit", "stroke-dasharray", "stroke-dashoffset", "stroke-opacity",
+  "opacity", "transform", "clip-rule"
+]);
+const svgAssets = new WeakMap();   // asset -> modèle analysé (clés faibles : croissance impossible)
+const svgCache = new Map();        // anciennes chaînes validées, bornées par SVG_CACHE_MAX
+const SVG_CACHE_MAX = 32;
+
+function svgAsset(markup) { return Object.freeze({ [SVG_MARK]: true, markup: String(markup) }); }
+const DP_ICON_SVG = svgAsset(DP_ICON);
+
+function svgAllowed(root) {
+  for (const el of [root, ...root.querySelectorAll("*")]) {
+    if (el.namespaceURI !== SVG_NS || !SVG_TAGS.has(el.localName)) return false;
+    for (const at of Array.from(el.attributes)) {
+      if (at.namespaceURI === XMLNS_NS) continue;   // déclaration de namespace, inoffensive
+      if (!SVG_ATTRS.has(at.name)) return false;
+    }
   }
-  return n.cloneNode(true);
+  return true;
+}
+function svgParse(markup) {
+  const src = markup.includes("xmlns=") ? markup : markup.replace("<svg", '<svg xmlns="' + SVG_NS + '"');
+  const doc = new DOMParser().parseFromString(src, "image/svg+xml");
+  const root = doc.documentElement;
+  if (!root || root.localName !== "svg" || root.namespaceURI !== SVG_NS || !svgAllowed(root)) return null;
+  return document.importNode(root, true);
+}
+function svgNode(markup) {
+  let tpl = svgAssets.get(markup);
+  if (tpl === undefined) { tpl = svgParse(markup.markup); svgAssets.set(markup, tpl); }
+  return tpl ? tpl.cloneNode(true) : null;
+}
+function svgLegacyNode(markup) {
+  let tpl = svgCache.get(markup);
+  if (tpl === undefined) {
+    tpl = svgParse(markup);
+    if (svgCache.size >= SVG_CACHE_MAX) svgCache.clear();   // aucune croissance non bornée
+    svgCache.set(markup, tpl);
+  }
+  return tpl ? tpl.cloneNode(true) : null;
 }
 function mk(tag, cls, content) {
   const e = document.createElement(tag);
   if (cls) e.className = cls;
   if (content != null && content !== "") {
-    if (typeof content === "string" && content.startsWith("<svg")) e.appendChild(svgNode(content));
-    else e.textContent = content;
+    if (typeof content === "object" && content[SVG_MARK] === true) {
+      const n = svgNode(content);
+      if (n) e.appendChild(n); else e.textContent = content.markup;
+    } else if (typeof content === "string" && content.startsWith("<svg")) {
+      const n = svgLegacyNode(content);
+      if (n) e.appendChild(n); else e.textContent = content;   // markup non conforme : jamais interprété
+    } else e.textContent = content;
   }
   return e;
 }
@@ -73,7 +122,7 @@ function createDatePicker(initialIso) {
   const root = mk("div", "dp");
   const field = mk("div", "dp-field");
   const input = mk("input"); input.type = "text"; input.inputMode = "numeric"; input.maxLength = 10; input.autocomplete = "off";
-  const btn = mk("button", "dp-btn", DP_ICON); btn.type = "button";
+  const btn = mk("button", "dp-btn", DP_ICON_SVG); btn.type = "button";
   const err = mk("span", "dp-err"); err.hidden = true; err.setAttribute("role", "alert");
   field.append(input, btn, err);
   const clearErr = () => { err.hidden = true; };
@@ -157,6 +206,7 @@ function createDatePicker(initialIso) {
 
 // Sélecteur d'heure intégré (24 h) : le sélecteur natif s'ouvrirait sous le popup.
 const TP_ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+const TP_ICON_SVG = svgAsset(TP_ICON);
 
 function parseTimeField(str) {
   const g = str.replace(/\D/g, "");
@@ -171,7 +221,7 @@ function createTimePicker(initial) {
   const root = mk("div", "dp");
   const field = mk("div", "dp-field tp");
   const input = mk("input"); input.type = "text"; input.inputMode = "numeric"; input.maxLength = 5; input.autocomplete = "off";
-  const btn = mk("button", "dp-btn", TP_ICON); btn.type = "button";
+  const btn = mk("button", "dp-btn", TP_ICON_SVG); btn.type = "button";
   const err = mk("span", "dp-err"); err.hidden = true; err.setAttribute("role", "alert");
   field.append(input, btn, err);
   const clearErr = () => { err.hidden = true; };
@@ -238,13 +288,14 @@ function createTimePicker(initial) {
 
 // Bouton de répétition (icône infini) + petit menu intégré.
 const RP_ICON = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16c5 0 7-8 12-8a4 4 0 0 1 0 8c-5 0-7-8-12-8a4 4 0 1 0 0 8"/></svg>';
+const RP_ICON_SVG = svgAsset(RP_ICON);
 const RP_VALUES = ["none", "daily", "weekly", "monthly"];
 
 function createRepeatPicker(initial) {
   let value = RP_VALUES.includes(initial) ? initial : "none";
   let open = false;
   const root = mk("div", "dp");
-  const btn = mk("button", "rp-btn", RP_ICON); btn.type = "button";
+  const btn = mk("button", "rp-btn", RP_ICON_SVG); btn.type = "button";
   const pop = mk("div", "dp-pop rp-pop"); pop.hidden = true;
   root.append(btn, pop);
 

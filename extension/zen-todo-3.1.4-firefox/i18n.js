@@ -262,10 +262,31 @@ const isLang = (l) => typeof l === "string" && Object.prototype.hasOwnProperty.c
 function setLang(l) { LANG = isLang(l) ? l : "en"; if (typeof document !== "undefined") document.documentElement.lang = LANG; }
 function locale() { return ({ fr: "fr-FR", en: "en-US", es: "es-ES", de: "de-DE" })[LANG] || "en-US"; }
 function defaultLang() { const l = (navigator.language || "en").toLowerCase(); return l.startsWith("fr") ? "fr" : l.startsWith("es") ? "es" : l.startsWith("de") ? "de" : "en"; }
+// Les trois listes de nœuds sont construites une fois : applyStaticI18n() est rappelée à chaque
+// changement de langue mais le balisage statique ne bouge pas. Seul un remplacement de <body> les invalide.
+let i18nIndex = null;
+function i18nNodes() {
+  const body = document.body;
+  if (!i18nIndex || i18nIndex.body !== body) {
+    i18nIndex = {
+      body,
+      text: document.querySelectorAll("[data-i18n]"),
+      ph: document.querySelectorAll("[data-i18n-placeholder]"),
+      title: document.querySelectorAll("[data-i18n-title]")
+    };
+  }
+  return i18nIndex;
+}
 function applyStaticI18n() {
-  document.querySelectorAll("[data-i18n]").forEach(e => e.textContent = t(e.dataset.i18n));
-  document.querySelectorAll("[data-i18n-placeholder]").forEach(e => e.placeholder = t(e.dataset.i18nPlaceholder));
-  document.querySelectorAll("[data-i18n-title]").forEach(e => { e.title = t(e.dataset.i18nTitle); e.setAttribute("aria-label", e.title); });
+  const i = i18nNodes();
+  // Aucune écriture quand la valeur est déjà la bonne : la deuxième application est un no-op complet.
+  for (const e of i.text) { const v = t(e.dataset.i18n); if (e.textContent !== v) e.textContent = v; }
+  for (const e of i.ph) { const v = t(e.dataset.i18nPlaceholder); if (e.placeholder !== v) e.placeholder = v; }
+  for (const e of i.title) {
+    const v = t(e.dataset.i18nTitle);
+    if (e.title !== v) e.title = v;
+    if (e.getAttribute("aria-label") !== v) e.setAttribute("aria-label", v);
+  }
 }
 
 function dateOrder() { return LANG === "en" ? "mdy" : "dmy"; }
@@ -273,7 +294,8 @@ function dateSep() { return LANG === "de" ? "." : "/"; }
 
 let THEME = "dark";
 function applyTheme(th) {
-  document.documentElement.setAttribute("data-theme", th);
-  try { localStorage.setItem("zt-theme", th); } catch (e) {}
+  if (document.documentElement.getAttribute("data-theme") !== th) document.documentElement.setAttribute("data-theme", th);
+  // N'écrit que si la valeur stockée diffère : évite un accès disque inutile à chaque rendu.
+  try { if (localStorage.getItem("zt-theme") !== th) localStorage.setItem("zt-theme", th); } catch (e) {}
 }
 function setTheme(th) { THEME = (th === "light") ? "light" : "dark"; applyTheme(THEME); }
