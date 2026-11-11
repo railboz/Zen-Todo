@@ -1275,14 +1275,16 @@ let restoreArmed = false;
 function resetRestore() { restoreArmed = false; const b = $("restore-backup"); b.classList.remove("armed"); b.textContent = t("restoreBackup"); }
 // Clés du bloc synchro lues en une fois (compte Google compris) : un seul aller-retour au lieu de
 // deux appels séquentiels (Sync.account() puis le get des trois valeurs).
-const SYNC_READ_KEYS = { gAccount: null, syncState: null, backup: null, lastSync: 0 };
+// `backup` n'en fait pas partie : c'est une copie complète des tâches et des projets, inutile avant
+// la première peinture, et lue séparément par refreshRestore().
+const SYNC_READ_KEYS = { gAccount: null, syncState: null, lastSync: 0 };
 async function renderSyncUI(snapshot) {
   const ok = Sync.available() && Sync.configured();
   $("sync-setup").hidden = ok;
   // `snapshot` : valeurs déjà lues au démarrage, pour ne rien relire sur ce chemin.
   const s = snapshot || await api.storage.local.get(SYNC_READ_KEYS);
   const acct = (ok && s.gAccount && typeof s.gAccount === "object") ? s.gAccount : null;   // comme Sync.account()
-  const syncState = s.syncState, backup = s.backup, lastSync = s.lastSync;
+  const syncState = s.syncState, lastSync = s.lastSync;
   $("sync-signin").hidden = !(ok && !acct);
   $("sync-on").hidden = !(ok && acct);
 
@@ -1300,13 +1302,20 @@ async function renderSyncUI(snapshot) {
       ind.setAttribute("aria-label", ind.title);
     }
   }
-  $("restore-backup").hidden = !(backup && Array.isArray(backup.tasks) && Array.isArray(backup.projects));
+  refreshRestore().catch(() => {});   // `backup` (copie lourde) est lu hors de la lecture de démarrage
   if (!acct) return;
   $("sync-email").textContent = acct.email || t("syncTitle");
   $("sync-last").textContent = lastSync ? t("syncLast", { t: new Date(lastSync).toLocaleString(locale(), { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) }) : "";
   // Dernière erreur : afficher aussi le détail renvoyé par Google (API désactivée, portée refusée…)
   // tant qu'une synchronisation n'a pas réussi.
   if (syncState && syncState.code !== "ok") syncMsg(syncStateText(syncState), true);
+}
+/* Le bouton « restaurer » ne dépend que de l'existence de `backup`. Cette copie complète des tâches
+   et des projets est lue ici (renderSyncUI n'est appelé qu'après la première peinture, et les
+   rafraîchissements suivants sont groupés par scheduleSyncUI) : elle ne pèse pas sur l'ouverture. */
+async function refreshRestore() {
+  const { backup } = await api.storage.local.get({ backup: null });
+  $("restore-backup").hidden = !(backup && Array.isArray(backup.tasks) && Array.isArray(backup.projects));
 }
 $("sync-signin").addEventListener("click", () => { syncMsg(t("syncOpening")); api.runtime.sendMessage({ type: "zt:signin" }).catch(() => {}); });
 $("sync-out").addEventListener("click", () => { syncMsg(""); api.runtime.sendMessage({ type: "zt:signout" }).catch(() => {}); });
