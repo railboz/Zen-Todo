@@ -286,18 +286,8 @@ function afterPaint(fn) {
     });
   });
 }
-// Barres de progression des projets : largeur finale calculée dans le même lot différé.
-const barJobs = [];
-let barFlushQueued = false;
-function queueBarFill(fill, pct) {
-  barJobs.push([fill, pct]);
-  if (barFlushQueued) return;
-  barFlushQueued = true;
-  afterPaint(() => {
-    barFlushQueued = false;
-    for (const [f, v] of barJobs.splice(0)) f.style.width = v + "%";
-  });
-}
+// Barres de progression des projets : largeur finale posée dans le même lot différé (même frame).
+const queueBarFill = (fill, pct) => afterPaint(() => { fill.style.width = pct + "%"; });
 
 function render() {
   if (!editingId) editNodeCache = null;   // édition terminée : ne pas garder un formulaire fantôme
