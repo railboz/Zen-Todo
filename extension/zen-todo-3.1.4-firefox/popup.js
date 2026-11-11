@@ -416,17 +416,22 @@ function taskNode(task, i, canReorder) {
 }
 
 /* ---------- délégation des événements de la liste ---------- */
-/* 6 écouteurs sur #list au lieu de 11 par tâche (1100 créations par rendu à N=100). Chaque
+/* 7 écouteurs sur #list au lieu de 11 par tâche (1100 créations par rendu à N=100). Chaque
    gestionnaire retrouve la ligne par closest("li.task") au moment de l'événement. */
 const reorderable = new WeakSet();   // lignes construites avec canReorder (aucun attribut DOM en plus)
 const taskById = (id) => tasks.find(x => x.id === id) || null;
 const inList = (target) => (target && target.closest) ? target.closest("li.task") : null;
+// Ligne armée par un mousedown sur la poignée. Tout relâchement doit la désarmer, y compris hors
+// de la ligne ou hors du popup : sinon `draggable` reste vrai et la ligne ne peut plus être
+// sélectionnée au texte (un simple glisser la réordonnerait et le pousserait vers Drive).
+let armedRow = null;
+function disarm() { if (armedRow) { armedRow.draggable = false; armedRow = null; } }
 
 list.addEventListener("click", (e) => {
   const li = inList(e.target);
   if (!li) return;
   // Clic sur la poignée sans glisser : la ligne ne doit pas rester déplaçable (ex-écouteur « mouseup »).
-  if (e.target.closest(".handle")) { li.draggable = false; return; }
+  if (e.target.closest(".handle")) { li.draggable = false; disarm(); return; }
   const btn = e.target.closest("button");
   if (!btn) return;
   const id = li.dataset.id;
@@ -442,10 +447,16 @@ list.addEventListener("click", (e) => {
   }
 });
 list.addEventListener("mousedown", (e) => {
+  if (e.button !== 0) return;   // clic droit/milieu : ne pas armer la ligne
   if (!e.target.closest || !e.target.closest(".handle")) return;
   const li = inList(e.target);
-  if (li && reorderable.has(li)) li.draggable = true;
+  if (li && reorderable.has(li)) { armedRow = li; li.draggable = true; }
 });
+// Relâchement : sur la liste (l'ancien écouteur par poignée) et au niveau du document, car un
+// relâchement hors de la ligne n'atteint jamais #list.
+list.addEventListener("mouseup", disarm);
+document.addEventListener("mouseup", disarm, true);
+document.addEventListener("pointerup", disarm, true);
 list.addEventListener("dragstart", (e) => {
   const li = inList(e.target);
   if (!li || !reorderable.has(li)) return;
@@ -456,7 +467,7 @@ list.addEventListener("dragstart", (e) => {
 list.addEventListener("dragend", (e) => {
   const li = inList(e.target);
   if (!li || !reorderable.has(li)) return;
-  li.draggable = false; dragId = null; clearDrop(); li.classList.remove("dragging");
+  li.draggable = false; disarm(); dragId = null; clearDrop(); li.classList.remove("dragging");
 });
 list.addEventListener("dragover", (e) => {
   const li = inList(e.target);
@@ -482,7 +493,7 @@ list.addEventListener("drop", (e) => {
   persist(); render();
   // Le rendu a remplacé la ligne source : le dragend du navigateur la visera détachée et
   // n'atteindra donc plus #list. On remet l'état de glisser à zéro ici (comme le faisait dragend).
-  dragId = null;
+  dragId = null; disarm();
 });
 
 function completeToggle(task) {
