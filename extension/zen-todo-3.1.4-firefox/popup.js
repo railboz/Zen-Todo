@@ -74,6 +74,11 @@ function playSound(type) {
 
 const $ = (id) => document.getElementById(id);
 const list = $("list");
+// SEC-10 : les identifiants lus dans le stockage sont déjà contraints par safeId(), mais une
+// valeur n'est jamais concaténée brute dans un sélecteur CSS : on l'échappe (une donnée
+// inattendue ne peut pas viser un autre nœud que celui voulu).
+const cssEsc = (s) => (typeof CSS !== "undefined" && typeof CSS.escape === "function")
+  ? CSS.escape(String(s)) : String(s).replace(/["\\]/g, "\\$&");
 const SVG = {
   check: '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>',
   up: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>',
@@ -96,6 +101,15 @@ function buildSelect(sel, values, prefix) {
   const cur = sel.value;
   sel.replaceChildren(...values.map(v => new Option(t(prefix + v), v)));
   if (values.includes(cur)) sel.value = cur;
+}
+// Remplissage mémoïsé (langue + options) : une liste de tâches ne reconstruit plus les <select>
+// de la vue Options à chaque rendu. Mêmes options pour la même clé, donc DOM identique.
+const selectKeys = new WeakMap();
+function buildSelectCached(sel, values, prefix) {
+  const key = LANG + "|" + prefix + "|" + values.join(",");
+  if (selectKeys.get(sel) === key) return;
+  selectKeys.set(sel, key);
+  buildSelect(sel, values, prefix);
 }
 function sortByCmp(a, b) {
   if (sortBy === "date") return (a.due || "9999-12-31").localeCompare(b.due || "9999-12-31");
@@ -120,6 +134,13 @@ function persist() {
 function touchSettings() { setTs = Date.now(); api.storage.local.set({ setTs }); Sync.markDirty(); }
 function tombstone(kind, id) { if (!safeId(id)) return; syncDel[kind][id] = Date.now(); api.storage.local.set({ del: syncDel }); }
 function untombstone(kind, id) { if (!safeId(id) || !syncDel[kind]) return; delete syncDel[kind][id]; api.storage.local.set({ del: syncDel }); }
+// SEC-09 : l'objet `del` lu dans le stockage passe par normDel() (sync.js) — validation stricte des
+// identifiants et purge des pierres tombales expirées — au lieu d'être recopié tel quel.
+// Garde `typeof` : hors navigateur (test), sync.js peut être absent.
+function readDel(d) {
+  if (typeof normDel === "function") return normDel(d);
+  return (d && typeof d === "object") ? { t: (d.t && typeof d.t === "object") ? d.t : {}, p: (d.p && typeof d.p === "object") ? d.p : {} } : { t: {}, p: {} };
+}
 
 // Si l'heure du rappel est déjà passée à l'enregistrement, on évite une notification immédiate.
 async function markPast(task) {
@@ -217,11 +238,22 @@ const FILTER_TESTS = {
   today: (x) => !x.done && !!x.due && x.due <= todayIso()   // aujourd'hui + en retard
 };
 function matchesFilter(x) { return FILTER_TESTS[filter](x); }
+let filtersKey = null;
 function renderFilters() {
   const box = $("filters");
   box.hidden = tasks.length === 0;
-  const counts = {};
-  FILTERS.forEach(f => { counts[f] = tasks.filter(FILTER_TESTS[f]).length; });
+  // Un seul passage sur les tâches (au lieu d'un filter par pastille) ; les compteurs suffisent
+  // comme clé : à clé égale, les pastilles seraient identiques.
+  const counts = { all: 0, todo: 0, done: 0, today: 0 };
+  const today = todayIso();
+  for (const x of tasks) {
+    counts.all++;
+    if (x.done) counts.done++;
+    else { counts.todo++; if (x.due && x.due <= today) counts.today++; }
+  }
+  const key = LANG + "|" + filter + "|" + counts.all + "|" + counts.todo + "|" + counts.done + "|" + counts.today;
+  if (key === filtersKey) return;
+  filtersKey = key;
   box.replaceChildren(...FILTERS.map(f => {
     const b = el("button", "fchip"); b.type = "button"; b.setAttribute("aria-pressed", String(f === filter));
     const l = el("span"); l.textContent = t("filter_" + f);
@@ -236,6 +268,37 @@ function renderFilters() {
 function normTasks(a) { return uniqueIds((Array.isArray(a) ? a : []).slice(0, 5000).map(sanitizeTask).filter(Boolean), "x"); }
 function normProjects(a) { return uniqueIds((Array.isArray(a) ? a : []).slice(0, 500).map(sanitizeProject).filter(Boolean), "p"); }
 
+/* ---------- travail différé d'après rendu ---------- */
+/* Une seule paire de requestAnimationFrame par rendu : plus de lecture de offsetWidth au milieu
+   de la construction de la liste (elle forçait une mise en page synchrone) et plus d'une paire
+   de rAF par projet. Les travaux s'exécutent dans l'ordre où ils ont été demandés. */
+const afterPaintJobs = [];
+let afterPaintFrame = 0;
+function afterPaint(fn) {
+  afterPaintJobs.push(fn);
+  if (afterPaintFrame) return;
+  afterPaintFrame = requestAnimationFrame(() => {
+    // Frame suivante : le navigateur a calculé les styles de départ (sans .bump, largeur = lastPct)
+    // avant qu'on ne les change — l'animation et la transition redémarrent comme avant.
+    afterPaintFrame = requestAnimationFrame(() => {
+      afterPaintFrame = 0;
+      for (const job of afterPaintJobs.splice(0)) { try { job(); } catch (e) {} }
+    });
+  });
+}
+// Barres de progression des projets : largeur finale calculée dans le même lot différé.
+const barJobs = [];
+let barFlushQueued = false;
+function queueBarFill(fill, pct) {
+  barJobs.push([fill, pct]);
+  if (barFlushQueued) return;
+  barFlushQueued = true;
+  afterPaint(() => {
+    barFlushQueued = false;
+    for (const [f, v] of barJobs.splice(0)) f.style.width = v + "%";
+  });
+}
+
 function render() {
   if (!editingId) editNodeCache = null;   // édition terminée : ne pas garder un formulaire fantôme
   if (!editingId && pendingTasks) { tasks = normTasks(pendingTasks); pendingTasks = null; }
@@ -243,13 +306,16 @@ function render() {
   const done = tasks.filter(x => x.done).length;
   const leftNow = tasks.length - done;
   $("left").textContent = leftNow;
-  if (lastLeft !== null && lastLeft !== leftNow) { $("left").classList.remove("bump"); void $("left").offsetWidth; $("left").classList.add("bump"); }
+  // Redémarrage de l'animation « bump » sans lire offsetWidth (aucune mise en page forcée) :
+  // la classe est retirée maintenant et remise après la frame de peinture.
+  if (lastLeft !== null && lastLeft !== leftNow) { $("left").classList.remove("bump"); afterPaint(() => $("left").classList.add("bump")); }
   lastLeft = leftNow;
   $("subtitle").textContent = tasks.length ? t("tasksCount", { n: tasks.length, d: done }) : t("emptySub");
   $("clear").disabled = done === 0;
   $("clear").style.opacity = done === 0 ? .5 : 1;
 
-  buildSelect($("new-priority"), PRIOS, "");
+  // Vue Options (masquée pendant un rendu de liste) : reconstruite seulement si ses entrées changent.
+  buildSelectCached($("new-priority"), PRIOS, "");
   renderPrioChips();
   renderFilters();
 
@@ -260,14 +326,14 @@ function render() {
   // ne correspond plus : sinon son formulaire disparaîtrait au milieu de la saisie.
   if (editingId) {
     const ed = tasks.find(x => x.id === editingId);
-    if (ed && !shown.includes(ed)) shown = [ed, ...shown];
+    if (ed && !new Set(shown.map(x => x.id)).has(ed.id)) shown = [ed, ...shown];
   }
   const sorting = !q && sortBy !== "manual";
   if (sorting) shown = shown.slice().sort(sortByCmp);
 
-  buildSelect($("sort-select"), SORTS, "sort_");
+  buildSelectCached($("sort-select"), SORTS, "sort_");
   $("sort-select").value = sortBy;
-  buildSelect($("sort-select-settings"), SORTS, "sort_");
+  buildSelectCached($("sort-select-settings"), SORTS, "sort_");
   $("sort-select-settings").value = sortBy;
 
   $("search-box").hidden = tasks.length === 0;
@@ -278,7 +344,10 @@ function render() {
   list.replaceChildren();
 
   if (q || filtered || sorting) {
-    shown.forEach(task => list.appendChild(taskNode(task, tasks.indexOf(task), false)));
+    // N² → N : index construit une fois au lieu d'un tasks.indexOf() par tâche affichée.
+    const indexById = new Map();
+    tasks.forEach((x, i) => indexById.set(x.id, i));
+    shown.forEach(task => list.appendChild(taskNode(task, indexById.get(task.id), false)));
   } else {
     const late = [], normal = [];
     tasks.forEach((task, idx) => { (isLate(task) ? late : normal).push([task, idx]); });
@@ -303,35 +372,9 @@ function taskNode(task, i, canReorder) {
   handle.setAttribute("aria-hidden", "true");
   if (!canReorder) handle.style.visibility = "hidden";
   li.appendChild(handle);
-  if (canReorder) {
-    handle.addEventListener("mousedown", () => (li.draggable = true));
-    handle.addEventListener("mouseup", () => (li.draggable = false));   // clic sans glisser : ne pas laisser toute la ligne déplaçable
-    li.addEventListener("dragstart", (e) => {
-      dragId = task.id; li.classList.add("dragging");
-      e.dataTransfer.effectAllowed = "move";
-      e.dataTransfer.setData("text/plain", task.id);
-    });
-    li.addEventListener("dragend", () => { li.draggable = false; dragId = null; clearDrop(); li.classList.remove("dragging"); });
-    li.addEventListener("dragover", (e) => {
-      if (!dragId || dragId === task.id) return;
-      e.preventDefault();
-      const r = li.getBoundingClientRect();
-      clearDrop();
-      li.classList.add(e.clientY < r.top + r.height / 2 ? "drop-before" : "drop-after");
-    });
-    li.addEventListener("drop", (e) => {
-      e.preventDefault();
-      if (!dragId || dragId === task.id) return;
-      const before = li.classList.contains("drop-before");
-      const from = tasks.findIndex(x => x.id === dragId);
-      if (from < 0) return;   // la tâche a disparu entre-temps (synchro) : splice(-1) aurait supprimé la dernière
-      const [moved] = tasks.splice(from, 1);
-      let to = tasks.findIndex(x => x.id === task.id);
-      if (!before) to++;
-      tasks.splice(to, 0, moved);
-      persist(); render();
-    });
-  }
+  // Délégation : un seul jeu d'écouteurs sur #list (voir plus bas). `reorderable` tient le rôle
+  // qu'avait la présence des écouteurs par ligne — sans ajouter d'attribut au DOM.
+  if (canReorder) reorderable.add(li);
 
   if (editingId === task.id) {
     if (!editNodeCache || editNodeCache.id !== task.id) editNodeCache = { id: task.id, node: editNode(task) };
@@ -343,7 +386,6 @@ function taskNode(task, i, canReorder) {
   check.type = "button";
   check.title = task.done ? t("markUndone") : t("markDone");
   check.setAttribute("aria-label", check.title);
-  check.addEventListener("click", () => completeToggle(task));
   li.appendChild(check);
 
   const body = el("div", "body");
@@ -355,9 +397,9 @@ function taskNode(task, i, canReorder) {
   if (task.note && task.note.trim()) { const nd = el("div", "note"); const ni = el("span", "ico", SVG.note); const nt = el("span"); nt.textContent = task.note; nd.append(ni, nt); body.append(nd); }
 
   const bottom = el("div", "bottom");
-  const up = mini(SVG.up, t("moveUp"), () => move(i, -1)); up.disabled = !canReorder || neighborIndex(i, -1) < 0;
-  const down = mini(SVG.down, t("moveDown"), () => move(i, 1)); down.disabled = !canReorder || neighborIndex(i, 1) < 0;
-  const edit = mini(SVG.edit, t("edit"), () => { editingId = task.id; render(); });
+  const up = mini(SVG.up, t("moveUp")); up.disabled = !canReorder || neighborIndex(i, -1) < 0;
+  const down = mini(SVG.down, t("moveDown")); down.disabled = !canReorder || neighborIndex(i, 1) < 0;
+  const edit = mini(SVG.edit, t("edit"));
   edit.classList.add("edit-btn");
   bottom.append(up, down, edit);
 
@@ -379,10 +421,79 @@ function taskNode(task, i, canReorder) {
 
   const del = el("button", "del", SVG.trash);
   del.type = "button"; del.title = t("del"); del.setAttribute("aria-label", t("del"));
-  del.addEventListener("click", () => removeTasks(new Set([task.id])));
   li.appendChild(del);
   return li;
 }
+
+/* ---------- délégation des événements de la liste ---------- */
+/* 6 écouteurs sur #list au lieu de 11 par tâche (1100 créations par rendu à N=100). Chaque
+   gestionnaire retrouve la ligne par closest("li.task") au moment de l'événement. */
+const reorderable = new WeakSet();   // lignes construites avec canReorder (aucun attribut DOM en plus)
+const taskById = (id) => tasks.find(x => x.id === id) || null;
+const inList = (target) => (target && target.closest) ? target.closest("li.task") : null;
+
+list.addEventListener("click", (e) => {
+  const li = inList(e.target);
+  if (!li) return;
+  // Clic sur la poignée sans glisser : la ligne ne doit pas rester déplaçable (ex-écouteur « mouseup »).
+  if (e.target.closest(".handle")) { li.draggable = false; return; }
+  const btn = e.target.closest("button");
+  if (!btn) return;
+  const id = li.dataset.id;
+  if (btn.classList.contains("check")) { const task = taskById(id); if (task) completeToggle(task); return; }
+  if (btn.classList.contains("del")) { removeTasks(new Set([id])); return; }
+  if (btn.classList.contains("edit-btn")) { editingId = id; render(); return; }
+  if (btn.classList.contains("mini")) {
+    const i = tasks.findIndex(x => x.id === id);
+    if (i < 0) return;
+    // `.bottom` contient [monter, descendre, modifier, échéance] : les deux flèches n'ont pas de
+    // classe propre (le DOM ne doit pas changer), c'est leur position qui les distingue.
+    move(i, btn.parentElement && btn.parentElement.firstElementChild === btn ? -1 : 1);
+  }
+});
+list.addEventListener("mousedown", (e) => {
+  if (!e.target.closest || !e.target.closest(".handle")) return;
+  const li = inList(e.target);
+  if (li && reorderable.has(li)) li.draggable = true;
+});
+list.addEventListener("dragstart", (e) => {
+  const li = inList(e.target);
+  if (!li || !reorderable.has(li)) return;
+  dragId = li.dataset.id; li.classList.add("dragging");
+  e.dataTransfer.effectAllowed = "move";
+  e.dataTransfer.setData("text/plain", dragId);
+});
+list.addEventListener("dragend", (e) => {
+  const li = inList(e.target);
+  if (!li || !reorderable.has(li)) return;
+  li.draggable = false; dragId = null; clearDrop(); li.classList.remove("dragging");
+});
+list.addEventListener("dragover", (e) => {
+  const li = inList(e.target);
+  if (!li || !dragId || dragId === li.dataset.id) return;
+  e.preventDefault();
+  const r = li.getBoundingClientRect();
+  clearDrop();
+  li.classList.add(e.clientY < r.top + r.height / 2 ? "drop-before" : "drop-after");
+});
+list.addEventListener("drop", (e) => {
+  const li = inList(e.target);
+  e.preventDefault();
+  if (!li) return;
+  const targetId = li.dataset.id;
+  if (!dragId || dragId === targetId) return;
+  const before = li.classList.contains("drop-before");
+  const from = tasks.findIndex(x => x.id === dragId);
+  if (from < 0) return;   // la tâche a disparu entre-temps (synchro) : splice(-1) aurait supprimé la dernière
+  const [moved] = tasks.splice(from, 1);
+  let to = tasks.findIndex(x => x.id === targetId);
+  if (!before) to++;
+  tasks.splice(to, 0, moved);
+  persist(); render();
+  // Le rendu a remplacé la ligne source : le dragend du navigateur la visera détachée et
+  // n'atteindra donc plus #list. On remet l'état de glisser à zéro ici (comme le faisait dragend).
+  dragId = null;
+});
 
 function completeToggle(task) {
   if (completing.has(task.id)) return;
@@ -419,7 +530,7 @@ function completeToggle(task) {
 
 // Le rendu reconstruit la liste : sans cela, le focus retombait sur le document après chaque clic.
 function focusTaskCheck(id) {
-  let n = list.querySelector('.task[data-id="' + id + '"] .check');
+  let n = list.querySelector('.task[data-id="' + cssEsc(id) + '"] .check');
   // Tâche devenue invisible (filtre « À faire », recherche, tri) : ne pas laisser le focus au document.
   if (!n) n = list.querySelector(".task .check") || (IS_ANDROID ? $("add-btn") : $("new-text"));
   if (!n) return;
@@ -427,26 +538,28 @@ function focusTaskCheck(id) {
 }
 // Retour du focus sur le bouton « Modifier » après la fermeture d'une feuille ou d'une édition.
 function focusTaskEdit(id) {
-  const n = list.querySelector('.task[data-id="' + id + '"] .edit-btn') || (IS_ANDROID ? $("add-btn") : $("new-text"));
+  const n = list.querySelector('.task[data-id="' + cssEsc(id) + '"] .edit-btn') || (IS_ANDROID ? $("add-btn") : $("new-text"));
   if (!n) return;
   try { n.focus({ preventScroll: true }); } catch (e) { try { n.focus(); } catch (e2) {} }
 }
 function focusProjectEdit(id) {
-  const n = $("project-list").querySelector('.project[data-id="' + id + '"] .p-edit-btn') || $("new-project");
+  const n = $("project-list").querySelector('.project[data-id="' + cssEsc(id) + '"] .p-edit-btn') || $("new-project");
   if (!n) return;
   try { n.focus({ preventScroll: true }); } catch (e) { try { n.focus(); } catch (e2) {} }
 }
 // Après l'édition d'une sous-tâche, revenir sur son bouton « Modifier ».
 function focusSubButton(pid, sid) {
-  const n = $("project-list").querySelector('.project[data-id="' + pid + '"] .stask[data-sub-id="' + sid + '"] .mini');
+  const n = $("project-list").querySelector('.project[data-id="' + cssEsc(pid) + '"] .stask[data-sub-id="' + cssEsc(sid) + '"] .mini');
   if (!n) return;
   try { n.focus({ preventScroll: true }); } catch (e) { try { n.focus(); } catch (e2) {} }
 }
 
+// `fn` facultatif : les boutons de la liste de tâches sont gérés par délégation (un seul
+// écouteur sur #list), ceux des projets et sous-tâches gardent le leur.
 function mini(svg, title, fn) {
   const b = el("button", "mini", svg);
   b.type = "button"; b.title = title; b.setAttribute("aria-label", title);
-  b.addEventListener("click", fn);
+  if (typeof fn === "function") b.addEventListener("click", fn);
   return b;
 }
 
@@ -578,8 +691,8 @@ $("note-toggle").addEventListener("click", () => {
 /* ---------- recherche ---------- */
 $("search").addEventListener("input", (e) => {
   query = e.target.value;
-  $("search-clear").hidden = query === "";
-  render();
+  $("search-clear").hidden = query === "";   // retour visuel immédiat : le champ est natif
+  scheduleRender();   // un rendu coalescé par frame au lieu d'une reconstruction par frappe
 });
 $("search").addEventListener("keydown", (e) => { if (e.key === "Escape" && query) { e.stopPropagation(); clearSearch(); } });
 $("search-clear").addEventListener("click", () => { clearSearch(); $("search").focus(); });
@@ -656,7 +769,7 @@ function renderProjects() {
   enterProj = null; enterSub = null; doneSub = null;
   let didFocus = false;
   if (focusSubFor) {
-    const inp = pl.querySelector(`[data-sub-input="${focusSubFor}"]`);
+    const inp = pl.querySelector(`[data-sub-input="${cssEsc(focusSubFor)}"]`);
     if (inp) { inp.focus(); didFocus = true; }
     focusSubFor = null;
   }
@@ -701,7 +814,7 @@ function projectNode(p) {
   track.appendChild(fill);
   const pctEl = el("span", "p-pct"); pctEl.textContent = complete ? "✓ " + t("projectDone") : pct + "%";
   barRow.append(track, pctEl);
-  requestAnimationFrame(() => requestAnimationFrame(() => { fill.style.width = pct + "%"; }));
+  queueBarFill(fill, pct);   // largeur finale posée dans le lot différé du rendu (une seule paire de rAF)
   lastPct[p.id] = pct;
 
   li.append(head, barRow);
@@ -864,7 +977,7 @@ function renderProjectsKeepInput() {
   const top = view ? view.scrollTop : 0;
   renderProjects();
   if (keep) {
-    const inp = $("project-list").querySelector(`[data-sub-input="${keep.id}"]`);
+    const inp = $("project-list").querySelector(`[data-sub-input="${cssEsc(keep.id)}"]`);
     if (inp) {
       inp.value = keep.v;
       try { inp.focus({ preventScroll: true }); } catch (e) { inp.focus(); }   // évite un saut sur Android
@@ -1007,8 +1120,12 @@ document.querySelectorAll(".lang[data-lang]").forEach(b => b.addEventListener("c
   applyLang(b.dataset.lang);
 }));
 /* priorité par défaut : 3 pastilles colorées */
+let prioChipsKey = null;
 function renderPrioChips() {
   const box = $("prio-chips");
+  const key = LANG + "|" + defaultPriority;
+  if (key === prioChipsKey) return;   // même langue et même défaut : DOM identique, rien à refaire
+  prioChipsKey = key;
   box.replaceChildren(...PRIOS.map(p => {
     const b = el("button", "chip chip-" + p); b.type = "button"; b.setAttribute("role", "radio");
     b.setAttribute("aria-pressed", String(p === defaultPriority)); b.setAttribute("aria-checked", String(p === defaultPriority));
@@ -1028,7 +1145,7 @@ function resetWipe() { wipeArmed = false; $("wipe").classList.remove("armed"); $
 $("wipe").addEventListener("click", () => {
   if (!wipeArmed) { wipeArmed = true; $("wipe").classList.add("armed"); $("wipe").textContent = t("confirmDelete"); return; }
   hideToast();   // une annulation de suppression ne doit pas ressusciter une tâche après l'effacement
-  if (tasks.length || projects.length) api.storage.local.set({ backup: { time: Date.now(), tasks, projects } }).then(renderSyncUI);   // filet de sécurité AVANT l'effacement
+  if (tasks.length || projects.length) api.storage.local.set({ backup: { time: Date.now(), tasks, projects } }).then(() => renderSyncUI());   // filet de sécurité AVANT l'effacement
   const now = Date.now();
   tasks.forEach(x => { if (safeId(x.id)) syncDel.t[x.id] = now; });   // tout marquer supprimé : l'effacement se propage
   projects.forEach(p => { if (safeId(p.id)) syncDel.p[p.id] = now; });
@@ -1156,11 +1273,16 @@ function syncKey(code) {
 function syncStateText(s) { return t(syncKey(s.code)) + (s.detail ? " — " + s.detail : ""); }
 let restoreArmed = false;
 function resetRestore() { restoreArmed = false; const b = $("restore-backup"); b.classList.remove("armed"); b.textContent = t("restoreBackup"); }
-async function renderSyncUI() {
+// Clés du bloc synchro lues en une fois (compte Google compris) : un seul aller-retour au lieu de
+// deux appels séquentiels (Sync.account() puis le get des trois valeurs).
+const SYNC_READ_KEYS = { gAccount: null, syncState: null, backup: null, lastSync: 0 };
+async function renderSyncUI(snapshot) {
   const ok = Sync.available() && Sync.configured();
   $("sync-setup").hidden = ok;
-  const acct = ok ? await Sync.account() : null;
-  const { syncState, backup, lastSync } = await api.storage.local.get({ syncState: null, backup: null, lastSync: 0 });
+  // `snapshot` : valeurs déjà lues au démarrage, pour ne rien relire sur ce chemin.
+  const s = snapshot || await api.storage.local.get(SYNC_READ_KEYS);
+  const acct = (ok && s.gAccount && typeof s.gAccount === "object") ? s.gAccount : null;   // comme Sync.account()
+  const syncState = s.syncState, backup = s.backup, lastSync = s.lastSync;
   $("sync-signin").hidden = !(ok && !acct);
   $("sync-on").hidden = !(ok && acct);
 
@@ -1238,9 +1360,13 @@ $("restore-backup").addEventListener("click", async () => {
   $("msg").textContent = t("restoreDone");
 });
 
-function applyLang(l) {
+function applyLang(l, opts) {
   if (!isLang(l)) l = defaultLang();   // valeur absente/inconnue : langue du navigateur, jamais l'anglais par accident
-  setLang(l); applyStaticI18n(); render(); addDue.refresh(); addRepeat.refresh(); resetWipe(); resetRestore(); loadShortcut(); labelSidebarBtn();
+  setLang(l); applyStaticI18n(); render(); addDue.refresh(); addRepeat.refresh(); resetWipe(); resetRestore();
+  // Au démarrage, les raccourcis (3 appels api.commands.getAll) attendent la première peinture :
+  // ils ne sont pas nécessaires à l'affichage de la liste.
+  if (!(opts && opts.deferShortcuts)) loadShortcut();
+  labelSidebarBtn();
   if (!$("toast").hidden) $("toast-undo").textContent = t("undo");
   document.querySelectorAll(".lang[data-lang]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.lang === l)));
 }
@@ -1248,19 +1374,34 @@ function applyLang(l) {
 function applyThemeUI() {
   document.querySelectorAll(".theme").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.theme === THEME)));
 }
+// Ouverture : theme-init.js a déjà posé data-theme depuis localStorage. setTheme() réécrit
+// l'attribut et localStorage (invalidation de style + écriture disque synchrone) juste avant la
+// première construction de liste ; on ne l'appelle donc que si la valeur affichée diffère.
+function applyThemeOnStartup(th) {
+  const want = th === "light" ? "light" : "dark";
+  let stored = null;
+  try { stored = localStorage.getItem("zt-theme"); } catch (e) {}
+  if (stored === want && document.documentElement.getAttribute("data-theme") === want) { THEME = want; return; }   // THEME : global de i18n.js
+  setTheme(want);
+}
 // Taille du texte : réglage local (comme le thème), mémorisé aussi dans localStorage pour éviter un clignotement.
 function applyTextSize(v) {
   const size = (v === "small" || v === "large") ? v : "normal";
-  document.documentElement.setAttribute("data-textsize", size);
-  try { localStorage.setItem("zt-textsize", size); } catch (e) {}
+  let stored = null;
+  try { stored = localStorage.getItem("zt-textsize"); } catch (e) {}
+  // Même garde que pour le thème : rien à écrire si theme-init.js a déjà posé la bonne valeur.
+  if (stored !== size || document.documentElement.getAttribute("data-textsize") !== size) {
+    document.documentElement.setAttribute("data-textsize", size);
+    try { localStorage.setItem("zt-textsize", size); } catch (e) {}
+  }
   document.querySelectorAll(".textsize").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.size === size)));
 }
 
-api.storage.local.get({ tasks: [], lang: null, defaultPriority: "medium", badge: true, theme: "dark", sortBy: null, sort: null, sound: true, projects: [], tab: "tasks", filter: "all", del: { t: {}, p: {} }, setTs: 0, textSize: "normal" }).then((s) => {
+api.storage.local.get({ tasks: [], lang: null, defaultPriority: "medium", badge: true, theme: "dark", sortBy: null, sort: null, sound: true, projects: [], tab: "tasks", filter: "all", del: { t: {}, p: {} }, setTs: 0, textSize: "normal", ...SYNC_READ_KEYS }).then((s) => {
   tasks = normTasks(s.tasks); defaultPriority = PRIOS.includes(s.defaultPriority) ? s.defaultPriority : "medium";
   filter = FILTERS.includes(s.filter) ? s.filter : "all";
   projects = normProjects(s.projects);
-  syncDel = (s.del && typeof s.del === "object") ? { t: (s.del.t && typeof s.del.t === "object") ? s.del.t : {}, p: (s.del.p && typeof s.del.p === "object") ? s.del.p : {} } : { t: {}, p: {} };
+  syncDel = readDel(s.del);
   setTs = Number(s.setTs) || 0;
   currentTab = s.tab === "projects" ? "projects" : "tasks"; applyView();
   // « manual » est une valeur volontaire : ne pas retomber sur l'ancienne clé « sort » (héritage)
@@ -1269,14 +1410,18 @@ api.storage.local.get({ tasks: [], lang: null, defaultPriority: "medium", badge:
   soundOn = s.sound !== false;
   $("badge-toggle").checked = s.badge;
   $("sound-toggle").checked = soundOn;
-  setTheme(s.theme || "dark"); applyThemeUI();
-  applyLang(s.lang || defaultLang());
+  applyThemeOnStartup(s.theme || "dark"); applyThemeUI();
+  applyLang(s.lang || defaultLang(), { deferShortcuts: true });
   applyTextSize(s.textSize);
   $("new-priority").value = defaultPriority; renderPrioChips();
-  renderSyncUI();
-  // Laisser le premier rendu se peindre avant la synchro réseau : l'ouverture reste fluide
-  // même si Google est lent ou si la session doit être renégociée.
-  requestAnimationFrame(() => setTimeout(() => Sync.auto(), 0));
+  // Rien de tout cela n'est nécessaire à la première peinture : bloc synchro, raccourcis puis
+  // synchro réseau passent après la frame de rendu (l'ouverture reste fluide même si Google est
+  // lent ou si la session doit être renégociée).
+  requestAnimationFrame(() => {
+    renderSyncUI(s);   // instantané du stockage déjà lu : aucune lecture supplémentaire
+    loadShortcut();
+    setTimeout(() => Sync.auto(), 0);
+  });
   if (currentTab === "projects") $("new-project").focus(); else $("new-text").focus();
 });
 $("theme-toggle").addEventListener("click", () => { setTheme(THEME === "dark" ? "light" : "dark"); applyThemeUI(); api.storage.local.set({ theme: THEME }); touchSettings(); });
@@ -1292,23 +1437,63 @@ function scheduleRender() {
   pendingRender = true;
   requestAnimationFrame(() => { pendingRender = false; render(); });
 }
+/* Regroupe les rafraîchissements du bloc synchro : gAccount/lastSync/syncState arrivent souvent
+   dans la même rafale, un seul rendu suffit (comme scheduleRender). */
+let pendingSyncUI = false;
+function scheduleSyncUI() {
+  if (pendingSyncUI) return;
+  pendingSyncUI = true;
+  requestAnimationFrame(() => { pendingSyncUI = false; renderSyncUI(); });
+}
+/* Comparaison en UNE passe avec l'état affiché, à la place de JSON.stringify des deux côtés :
+   on ne compare que les champs lus par le rendu, donc « égal » = DOM identique. Aucune
+   allocation de chaîne, sortie anticipée à la première différence. */
+function sameTasks(a, b) {
+  if (!Array.isArray(a) || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i], y = b[i];
+    if (!x || !y) return false;
+    if (x.id !== y.id || x.text !== y.text || x.done !== y.done || x.due !== y.due
+      || x.priority !== y.priority || x.note !== y.note || x.repeat !== y.repeat
+      || x.time !== y.time || x.remind !== y.remind || x.repeatDay !== y.repeatDay
+      || x.next !== y.next || (x.updatedAt || 0) !== (y.updatedAt || 0)) return false;
+  }
+  return true;
+}
+function sameProjects(a, b) {
+  if (!Array.isArray(a) || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i], y = b[i];
+    if (!x || !y) return false;
+    if (x.id !== y.id || x.name !== y.name || x.color !== y.color || x.due !== y.due
+      || x.time !== y.time || x.remind !== y.remind || !!x.open !== !!y.open
+      || (x.updatedAt || 0) !== (y.updatedAt || 0)) return false;
+    const sx = Array.isArray(x.subs) ? x.subs : [], sy = Array.isArray(y.subs) ? y.subs : [];
+    if (sx.length !== sy.length) return false;
+    for (let j = 0; j < sx.length; j++) {
+      const p = sx[j], q = sy[j];
+      if (!p || !q || p.id !== q.id || p.text !== q.text || !!p.done !== !!q.done) return false;
+    }
+  }
+  return true;
+}
 api.storage.onChanged.addListener((ch) => {
   if (ch.filter) { filter = FILTERS.includes(ch.filter.newValue) ? ch.filter.newValue : "all"; scheduleRender(); }
   if (ch.badge) $("badge-toggle").checked = !!ch.badge.newValue;
-  if (ch.del) { const d = ch.del.newValue; syncDel = (d && typeof d === "object") ? { t: (d.t && typeof d.t === "object") ? d.t : {}, p: (d.p && typeof d.p === "object") ? d.p : {} } : { t: {}, p: {} }; }
-  if (ch.gAccount || ch.lastSync) renderSyncUI();
+  if (ch.del) syncDel = readDel(ch.del.newValue);
+  if (ch.gAccount || ch.lastSync) scheduleSyncUI();
   if (ch.syncState) {
     const s = ch.syncState.newValue;
     if (s && typeof s.code === "string" && Date.now() - (Number(s.time) || 0) < 120000) {
       syncMsg(syncStateText(s), s.code !== "ok");
     }
-    renderSyncUI();
+    scheduleSyncUI();
   }
-  if (ch.projects && JSON.stringify(ch.projects.newValue) !== JSON.stringify(projects)) {
+  if (ch.projects && !sameProjects(ch.projects.newValue, projects)) {
     if (editingProject || editingSub) pendingProjects = ch.projects.newValue;   // édition en cours : on attend sa fin
     else { projects = normProjects(ch.projects.newValue); if (currentTab === "projects") renderProjectsKeepInput(); }
   }
-  if (ch.tasks && JSON.stringify(ch.tasks.newValue) !== JSON.stringify(tasks)) {
+  if (ch.tasks && !sameTasks(ch.tasks.newValue, tasks)) {
     if (editingId) pendingTasks = ch.tasks.newValue;   // édition en cours : reconstruire la liste effacerait la saisie
     else { tasks = normTasks(ch.tasks.newValue); scheduleRender(); }
   }
