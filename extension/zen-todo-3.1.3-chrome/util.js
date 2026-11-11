@@ -137,3 +137,9 @@ function sanitizeProject(p) {
   if (Number.isFinite(p.updatedAt) && p.updatedAt > 0) out.updatedAt = Math.floor(p.updatedAt);   // horodatage de synchronisation
   return out;
 }
+
+// Projet « terminé » : au moins une sous-tâche, toutes cochées. Partagé par l'interface (progression,
+// retard) et par l'arrière-plan (badge, rappels des projets) : un seul prédicat pour les deux.
+function isProjectDone(p) {
+  return Array.isArray(p.subs) && p.subs.length > 0 && p.subs.every(s => s.done);
+}

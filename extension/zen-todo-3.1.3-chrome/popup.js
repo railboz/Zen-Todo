@@ -726,11 +726,10 @@ async function taskToProject(task) {
     persist(); persistProjects(); applyView(); render();
   });
 }
-const isProjectLate = (p) => !!p.due && !isProjectDone(p) && p.due < todayIso();
+const isProjectLate = (p) => !!p.due && !isProjectDone(p) && p.due < todayIso();   // isProjectDone() : util.js, partagé avec background.js
 
 const PROJECT_COLORS = ["#7c5cff", "#34d399", "#f59e0b", "#fb7185", "#38bdf8", "#f472b6"];
 function projPct(p) { return p.subs.length ? Math.round(p.subs.filter(s => s.done).length / p.subs.length * 100) : 0; }
-function isProjectDone(p) { return p.subs.length > 0 && p.subs.every(s => s.done); }
 
 function persistProjects() {
   pendingProjects = null;
