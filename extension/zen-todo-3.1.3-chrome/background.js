@@ -64,8 +64,6 @@ function notify(tk) {
   });
 }
 
-const projDone = (p) => Array.isArray(p.subs) && p.subs.length > 0 && p.subs.every(x => x.done);
-
 const actionApi = api.action || api.browserAction;   // MV3 : "action", MV2 : "browserAction"
 
 // Dernier état réellement écrit dans la barre : ne réécrire que ce qui a changé.
@@ -77,7 +75,7 @@ async function updateBadge(tasks, enabled, projects = [], force = false) {
   if (!actionApi) return;   // plateforme sans badge (certaines versions Android) : ne pas faire échouer sync()
   const left = enabled ? tasks.filter(x => !x.done) : [];
   const today = localTodayIso();
-  const late = left.some(x => x.due && x.due < today) || (enabled && projects.some(p => p.due && p.due < today && !projDone(p)));
+  const late = left.some(x => x.due && x.due < today) || (enabled && projects.some(p => p.due && p.due < today && !isProjectDone(p)));
   const next = {
     text: left.length ? (left.length > 99 ? "99+" : String(left.length)) : "",
     color: late ? "#e5484d" : "#6d4df2",
@@ -93,14 +91,14 @@ async function updateBadge(tasks, enabled, projects = [], force = false) {
 
 async function sync(force = false) {
   const s = await api.storage.local.get({ tasks: [], projects: [], notified: {}, lang: null, badge: true, bgSig: null });
-  s.tasks = uniqueIds((Array.isArray(s.tasks) ? s.tasks : []).map(sanitizeTask).filter(Boolean), "x");
-  s.projects = uniqueIds((Array.isArray(s.projects) ? s.projects : []).map(sanitizeProject).filter(Boolean), "p");
+  s.tasks = parseList(s.tasks, sanitizeTask, "x");
+  s.projects = parseList(s.projects, sanitizeProject, "p");
   if (!s.notified || typeof s.notified !== "object") s.notified = {};
   setLang(s.lang || defaultLang());
   const now = Date.now();
   const keep = {};
   // les projets datés se comportent comme des tâches pour les rappels
-  const items = [...s.tasks, ...s.projects.map(p => ({ id: p.id, text: p.name, due: p.due, time: p.time, remind: p.remind, done: projDone(p), updatedAt: p.updatedAt }))];
+  const items = [...s.tasks, ...s.projects.map(p => ({ id: p.id, text: p.name, due: p.due, time: p.time, remind: p.remind, done: isProjectDone(p), updatedAt: p.updatedAt }))];
   const fires = items.map(fireTime);
   const sig = buildSig(items, fires, s.notified, s.badge, s.lang, now);
   if (!force && s.bgSig === sig) return;   // rien n'a changé depuis le dernier passage réussi : aucun IPC alarme/badge
