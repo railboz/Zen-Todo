@@ -1,0 +1,203 @@
+/* =====================================================================
+   Zen Todo 2.0 — refonte visuelle
+   - Clarté      : hiérarchie typographique nette, icônes précises, peu d'ornements
+   - Contenu     : le contenu d'abord, peu de bordures, séparateurs fins
+   - Profondeur  : 3 niveaux  (fond  →  surfaces groupées  →  éléments flottants en verre dépoli)
+   Les couleurs principales (violet #7c5cff, fond bleu nuit, crème en thème clair) sont conservées.
+   ===================================================================== */
+:root {
+  --font: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --ease: cubic-bezier(.32, .72, 0, 1);
+  --spring: cubic-bezier(.34, 1.45, .64, 1);
+  --text: #f5f5ff;
+  --panel: rgba(255,255,255,.06);          /* niveau 1 : surfaces groupées */
+  --panel-b: rgba(255,255,255,.075);
+  --sep: rgba(255,255,255,.10);            /* séparateur fin */
+  --surface-2: rgba(255,255,255,.10);      /* contrôles */
+  --field: rgba(255,255,255,.075);
+  --material: rgba(34,29,66,.78);          /* niveau 3 : éléments flottants */
+  --accent-tint: rgba(124,92,255,.22);
+  --on-soft: #fff;
+  --hl: inset 0 .5px 0 rgba(255,255,255,.09);
+  --r-lg: 18px; --r-md: 12px;
+}
+html[data-theme="light"] {
+  --text: #3b352b;
+  --panel: rgba(255,255,255,.78);
+  --panel-b: rgba(94,66,20,.10);
+  --sep: rgba(94,66,20,.13);
+  --surface-2: rgba(94,66,20,.08);
+  --field: rgba(94,66,20,.065);
+  --material: rgba(255,252,244,.84);
+  --accent-tint: rgba(109,77,242,.14);
+  --on-soft: #4a2fd0;
+  --hl: 0 1px 2px rgba(80,55,15,.07);
+}
+* { scrollbar-width: thin; scrollbar-color: rgba(128,128,160,.35) transparent; }
+body { font-family: var(--font); font-size: 14px; line-height: 1.35; }
+
+/* ---------- typographie ---------- */
+h1 { font-size: 17px; font-weight: 700; letter-spacing: -.02em; }
+.sub { color: var(--muted); font-size: 12px; }
+.text { font-size: 14.5px; font-weight: 600; letter-spacing: -.01em; }
+.muted { color: var(--muted); }
+
+/* ---------- en-tête ---------- */
+header { gap: 12px; }
+.logo { width: 36px; height: 36px; border-radius: 10px; box-shadow: 0 2px 10px rgba(91,61,240,.35); }
+.logo svg { width: 20px; height: 20px; }
+.counter { background: none; border: 0; padding: 0 4px; min-width: 0; align-items: flex-end; gap: 1px; }
+.counter b { font-size: 22px; line-height: 1; letter-spacing: -.02em; color: var(--accent); font-variant-numeric: tabular-nums; }
+html[data-theme="light"] .counter b { color: var(--accent2); }
+.counter span { font-size: 11px; letter-spacing: .06em; font-weight: 600; color: var(--muted); }
+.icon-btn { width: 34px; height: 34px; border: 0; border-radius: 50%; background: var(--surface-2); color: var(--soft); }
+.icon-btn:hover { background: var(--accent-tint); color: var(--text); }
+
+/* ---------- onglets : contrôle segmenté ---------- */
+.tabs { background: var(--panel); border: 0; border-radius: 12px; padding: 3px; gap: 2px; box-shadow: var(--hl); }
+.tab { padding: 7px 10px; border-radius: 9px; font-size: 13px; font-weight: 600; color: var(--muted); background: none; box-shadow: none; }
+.tab:hover { color: var(--text); }
+.tab[aria-selected="true"] { background: var(--surface-2); color: var(--text);
+  box-shadow: 0 1px 3px rgba(0,0,0,.28), inset 0 .5px 0 rgba(255,255,255,.12); }
+.tab[aria-selected="true"] svg { color: var(--soft); }
+html[data-theme="light"] .tab[aria-selected="true"] { background: #fff; box-shadow: 0 1px 3px rgba(80,55,15,.18); }
+html[data-theme="light"] .tab[aria-selected="true"] svg { color: var(--accent2); }
+
+/* ---------- cartes / champs : surfaces sans bordure ---------- */
+.card { background: var(--panel); border: 0; border-radius: var(--r-lg); box-shadow: var(--hl); padding: 12px; gap: 10px; }
+select, input, .note-input { border: 0; background-color: var(--field); border-radius: var(--r-md); }
+.card input[type=text]:focus, .note-input:focus, .dp-field:focus-within, .search:focus-within,
+#project-form input:focus, .sub-add input:focus, .sub-edit input:focus {
+  border: 0; outline: none; box-shadow: 0 0 0 3px var(--accent-tint), inset 0 0 0 1px var(--accent); }
+.dp-field { border: 0; background: var(--field); border-radius: var(--r-md); }
+.dp-field input, .search input { background: transparent; box-shadow: none; }
+.dp-field.invalid { box-shadow: 0 0 0 2px var(--high); }
+#add-row select, #add-row .dp-field, #add-row .rp-btn { min-height: 40px; }
+.add-btn { min-height: 40px; padding: 0 18px; border-radius: var(--r-md); background: var(--accent-fill); box-shadow: none; font-weight: 600; color: #fff; }
+.add-btn:hover { filter: brightness(1.1); }
+#add-row .add-btn { padding: 0 16px; }
+.rp-btn { border: 0; background: var(--field); border-radius: var(--r-md); color: var(--soft); }
+.rp-btn:hover { border: 0; color: var(--text); }
+.rp-btn.on { border: 0; background: var(--accent-tint); color: var(--on-soft); }
+
+/* ---------- recherche, tri, filtres ---------- */
+.search { border: 0; background: var(--field); border-radius: 10px; padding: 8px 12px; }
+.sort-select { border: 0; background-color: var(--field); color: var(--soft); }
+.fchip { border: 0; background: var(--field); color: var(--soft); padding: 6px 12px; }
+.fchip[aria-pressed="true"], html[data-theme="light"] .fchip[aria-pressed="true"] { background: var(--accent-fill); color: #fff; }
+
+/* ---------- liste de tâches : liste groupée ---------- */
+.list { gap: 0; }
+.task { background-color: var(--panel); border: 0; border-radius: 0; padding: 11px 12px 11px 8px; gap: 10px; }
+.task.p-low, .task.p-high { border: 0; }
+.list .task + .task { background-image: linear-gradient(var(--sep), var(--sep)); background-repeat: no-repeat;
+  background-size: calc(100% - 56px) 1px; background-position: right top; }
+.list .task:first-child, .list .group-title + .task { border-top-left-radius: var(--r-lg); border-top-right-radius: var(--r-lg); }
+.list .task:last-child, .list .task:has(+ .group-title) { border-bottom-left-radius: var(--r-lg); border-bottom-right-radius: var(--r-lg); }
+.task.drop-before::before { top: -1px; } .task.drop-after::after { bottom: -1px; }
+.group-title { margin: 16px 6px 6px; padding: 0; color: var(--muted); font-size: 11.5px; letter-spacing: .06em; }
+.group-title::after { display: none; }
+.group-title:first-child { margin-top: 2px; }
+.group-title.late { color: var(--high); }
+
+/* case à cocher : anneau de la couleur de priorité */
+.check { border-color: var(--med); }
+.p-low .check { border-color: var(--low); }
+.p-high .check { border-color: var(--high); }
+.task.done .check { background: var(--med); border-color: var(--med); }
+.task.done.p-low .check { background: var(--low); border-color: var(--low); }
+.task.done.p-high .check { background: var(--high); border-color: var(--high); }
+.badge { border: 0; font-size: 11px; padding: 3px 9px; background: color-mix(in srgb, var(--med) 18%, transparent); }
+.mini { background: none; border: 0; color: var(--muted); width: 28px; height: 28px; border-radius: 8px; }
+.mini:hover:not(:disabled) { background: var(--surface-2); color: var(--text); }
+.del { color: var(--muted); }
+.due { color: var(--muted); font-size: 12px; }
+.due.late { color: var(--high); font-weight: 600; }
+.handle { color: var(--muted); }
+
+/* états vides */
+.empty { border: 0; background: var(--panel); border-radius: var(--r-lg); box-shadow: var(--hl); padding: 30px 16px; color: var(--muted); }
+.empty strong { color: var(--text); font-size: 15px; }
+.empty svg { width: 34px; height: 34px; color: var(--accent); opacity: .85; }
+.clear-btn { border: 0; background: var(--field); color: var(--soft); }
+
+/* ---------- projets ---------- */
+.project { border: 0; background: var(--panel); border-radius: var(--r-lg); box-shadow: var(--hl); padding: 12px; }
+.project:hover { background: var(--panel); }
+.p-name { font-size: 14.5px; letter-spacing: -.01em; }
+.p-name::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--pc); margin-right: 8px; vertical-align: 1px; }
+.bar { height: 6px; border: 0; background: var(--surface-2); }
+.p-count { background: color-mix(in srgb, var(--pc) 18%, transparent); border: 0; }
+/* Sur crème, un vert/jaune de projet en petit texte tombe sous 3:1 : le texte reprend l'encre,
+   la couleur reste lisible en pastille et la barre est assombrie en gardant la teinte. */
+html[data-theme="light"] .p-count { color: var(--text); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pc) 60%, transparent); }
+html[data-theme="light"] .project:not(.complete) .bar-fill { background: color-mix(in srgb, var(--pc) 72%, #3b352b); }
+.subs { gap: 0; }
+.stask { background: none; border: 0; border-radius: 0; padding: 8px 2px; }
+.stask + .stask { box-shadow: inset 0 1px 0 var(--sep); }
+.stask:hover { background: none; }
+.stask.editing { padding: 6px 0; }
+.sub-add input, .sub-edit input { background: var(--field); }
+
+/* ---------- formulaires d'édition, répétition, calendrier ---------- */
+.edit .row button { border: 0; background: var(--field); border-radius: 10px; }
+.edit .row button.primary { background: var(--accent-fill); color: #fff; }
+.dp-pop, .rp-pop { background: var(--material); backdrop-filter: blur(24px) saturate(1.4);
+  border: 0; border-radius: var(--r-lg); box-shadow: var(--hl), 0 8px 24px rgba(0,0,0,.2); }
+.dp-day.sel { background: var(--accent-fill); color: #fff; }
+.rp-opt.sel { background: var(--accent-tint); }
+
+/* ---------- réglages : groupes ---------- */
+.back-btn { background: none; border: 0; color: var(--soft); padding: 4px 8px 4px 0; font-weight: 500; }
+.back-btn:hover { background: none; color: var(--text); }
+#settings-view .card { border-radius: var(--r-lg); padding: 14px; gap: 12px; }
+.set-ico, html[data-theme="light"] .set-ico { width: 30px; height: 30px; border-radius: 8px; background: var(--accent); color: #fff; }
+.lang { border: 0; background: var(--field); border-radius: 10px; }
+.lang[aria-pressed="true"] { background: var(--accent-fill); color: #fff; }
+.chip { border: 0; background: var(--field); border-radius: 10px; }
+.chip[aria-pressed="true"] { background: color-mix(in srgb, var(--c) 20%, transparent); box-shadow: inset 0 0 0 1.5px var(--c); }
+.sc-btn { border: 0; background: var(--field); border-radius: 10px; }
+.sc-btn.rec { background: var(--accent-tint); }
+.sc-btn kbd { border-color: var(--sep); }
+.switch { width: 46px; height: 28px; border: 0; background: var(--surface-2); }
+.switch::after { top: 2px; left: 2px; width: 24px; height: 24px; background: #fff; box-shadow: 0 2px 5px rgba(0,0,0,.3); transition: transform .3s var(--spring); }
+.switch:checked { background: var(--accent); }
+.switch:checked::after { transform: translateX(18px); background: #fff; }
+.danger { align-self: stretch; width: 100%; padding: 11px; border: 0; border-radius: var(--r-md); background: var(--field); color: var(--high); font-weight: 600; }
+.danger:hover, .danger.armed { background: color-mix(in srgb, var(--high) 20%, transparent); }
+.primary-btn { border-radius: var(--r-md); background: var(--accent-fill); }
+
+/* ---------- éléments flottants ---------- */
+.toast { background: var(--material); backdrop-filter: blur(24px) saturate(1.4);
+  color: var(--text); border: .5px solid var(--sep); border-radius: 16px; box-shadow: 0 14px 36px rgba(0,0,0,.35); }
+.toast button { background: var(--accent-fill); color: #fff; }
+
+/* ---------- mouvement : courbes douces ---------- */
+button { transition: background-color .2s var(--ease), color .2s var(--ease), transform .3s var(--spring), opacity .2s var(--ease), filter .2s; }
+button:active:not(:disabled) { transform: scale(.96); }
+.task.enter, .project.enter, .stask.enter { animation-timing-function: var(--ease); animation-duration: .32s; }
+.view:not([hidden]), .dp-pop:not([hidden]), .subs-wrap { animation-timing-function: var(--ease); }
+.search { padding: 8px 12px; }
+.search input { padding: 0; font-size: 13.5px; }
+#project-list { gap: 10px; }
+.msg:empty { display: none; }
+
+/* =====================================================================
+   Préférences système (HIG) — placées ici car cette feuille est chargée
+   en dernier : leurs variables et bordures doivent gagner sur border:0.
+   ===================================================================== */
+@media (prefers-contrast: more) {
+  :root { --panel-b: rgba(255,255,255,.30); --sep: rgba(255,255,255,.34); --muted: #c3c8ee; }
+  html[data-theme="light"] { --panel-b: rgba(94,66,20,.30); --sep: rgba(94,66,20,.32); --muted: #4d4436; }
+  .card, .task, .project, .stask, .search, .dp-field { box-shadow: inset 0 0 0 1px var(--panel-b); }
+}
+@media (forced-colors: active) {
+  .card, .task, .project, .stask, .search, .dp-field, .bar, .chip, .lang, .tab { border: 1px solid CanvasText; }
+  .task.done .text, .stask.done .s-text { text-decoration: line-through; }
+  .badge, .p-count, .add-btn, .primary-btn, .lang[aria-pressed="true"],
+  .fchip[aria-pressed="true"] { border: 1px solid ButtonText; }
+}
+/* Chrome/Opera (Firefox ne l'implémente pas encore) : les matériaux restent lisibles */
+@media (prefers-reduced-transparency: reduce) {
+  .toast, .dp-pop, .rp-pop { backdrop-filter: none; background: var(--field); }
+}

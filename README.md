@@ -85,7 +85,8 @@ Une question, un bug, une suggestion ? **zentodoassist@gmail.com**
 
 Ce dépôt héberge le **site officiel** de Zen Todo (GitHub Pages) :
 `index.html` (page d'accueil), `privacy.html` (politique de confidentialité) et le logo.
-Le code de l'extension est distribué via [addons.mozilla.org](https://addons.mozilla.org/firefox/addon/zen-todo/).
+Le code source de l'extension est dans [`extension/`](extension/) ; les versions installables sont
+distribuées via [addons.mozilla.org](https://addons.mozilla.org/firefox/addon/zen-todo/).
 
 ---
 

@@ -1,0 +1,80 @@
+:root {
+  --bg: #0d0d1a; --bg2: #171233;
+  --panel: rgba(255,255,255,.04); --panel-b: rgba(255,255,255,.09);
+  --field: #0f0f1f; --text: #eef0ff; --muted: #8f94c7; --soft: #aab1ff;
+  --accent: #7c5cff; --accent2: #5b3df0;
+  /* Aplats portant du texte : l'extrémité claire du violet ne donne que 4,35:1 avec du blanc.
+     Ce dégradé plus profond conserve la teinte de marque et dépasse 5:1. */
+  --accent-fill: linear-gradient(135deg, #6b4cf5, #4a2fd0);
+  --accent-text: #a48dff;   /* petit texte « accent » sur fond sombre (7,2:1) */
+  --low: #34d399; --med: #8b7bff; --high: #fb7185;
+  --on-soft: #ffffff;
+  color-scheme: dark;
+}
+
+/* Thème clair : crème/beige doux */
+html[data-theme="light"] {
+  --bg: #f6f0e4; --bg2: #ece0cb;
+  --panel: rgba(94,66,20,.06); --panel-b: rgba(94,66,20,.14);
+  --field: #fffdf7; --text: #3b352b;
+  /* 4,7:1 sur le fond crème (l'ancien #8a7f6c tombait à 3,5:1) */
+  --muted: #74695a; --soft: #6b5a3e;
+  --accent: #7c5cff; --accent2: #5b3df0;
+  --accent-fill: linear-gradient(135deg, #6b4cf5, #4a2fd0);
+  --accent-text: #5b3df0;   /* petit texte accent sur crème (5,4:1) */
+  --low: #0a7a50; --med: #6d4df2; --high: #c92a2f;   /* textes sémantiques lisibles sur crème (≥ 4,5:1) */
+  --on-soft: #4a2fd0;
+  color-scheme: light;
+}
+
+/* Bascule de logo soleil / lune */
+.ico-sun { display: none; }
+html[data-theme="light"] .ico-moon { display: none; }
+html[data-theme="light"] .ico-sun { display: block; }
+html[data-theme="light"] .dp-day.sel { color: #fff; }
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  font-family: "Inter", "Segoe UI", system-ui, sans-serif;
+  color: var(--text);
+  background: linear-gradient(155deg, var(--bg) 40%, var(--bg2) 100%);
+  font-size: 14px;
+}
+button { font: inherit; color: inherit; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+select, input { font: inherit; color: var(--text); background: var(--field);
+  border: 1px solid var(--panel-b); border-radius: 12px; padding: 10px 12px; }
+select { color-scheme: inherit; }
+.logo { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center;
+  background: linear-gradient(135deg, var(--accent), var(--accent2)); flex: none; }
+.logo svg { width: 22px; height: 22px; }
+
+/* --- Notes de tâche --- */
+.note { display: flex; align-items: flex-start; gap: 6px; color: var(--muted); font-size: 12.5px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; }
+.note .ico { flex: none; display: inline-flex; margin-top: 1px; opacity: .7; }
+.note-input { width: 100%; resize: vertical; min-height: 40px; font: inherit; color: var(--text); background: var(--field);
+  border: 1px solid var(--panel-b); border-radius: 12px; padding: 8px 10px; }
+.note-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(124,92,255,.25); outline: none; }
+
+/* --- Tri + section en retard --- */
+.sort-select { appearance: none; -moz-appearance: none; padding: 6px 26px 6px 12px; font-size: 12.5px; font-weight: 600;
+  border-radius: 999px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23aab1ff' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 8px center; }
+.sort-select-full { align-self: flex-start; width: 100%; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+.group-title { display: flex; align-items: center; gap: 8px; color: var(--high); font-size: 11px; font-weight: 700;
+  letter-spacing: .08em; text-transform: uppercase; padding: 2px 4px 0; margin-top: 6px; }
+.group-title:first-child { margin-top: 0; }
+.group-title::after { content: ""; flex: 1; height: 1px; background: var(--panel-b); }
+.list.late-group { margin-bottom: 4px; }
+
+/* --- Barre d'outils (recherche + tri) --- */
+.toolbar { display: flex; align-items: center; gap: 8px; }
+.toolbar .search { flex: 1 1 auto; min-width: 0; }
+.toolbar .sort-select { flex: none; }
+.search { display: flex; align-items: center; gap: 8px; padding: 6px 12px; background: var(--field);
+  border: 1px solid var(--panel-b); border-radius: 999px; }
+.search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(124,92,255,.25); }
+.search input { flex: 1; min-width: 0; border: 0; background: transparent; outline: none; padding: 0; font-size: 13px; color: var(--text); }
+.search-x { border: 0; background: none; color: var(--muted); font-size: 18px; line-height: 1; padding: 0 2px; cursor: pointer; }
+.search-x:hover { color: var(--text); }

@@ -1,0 +1,51 @@
+{
+  "manifest_version": 3,
+  "name": "Zen Todo",
+  "version": "3.1.9",
+  "description": "Une to-do list simple et zen / A simple, zen to-do list.",
+  "icons": {
+    "48": "icons/icon-48.png",
+    "96": "icons/icon-96.png"
+  },
+  "minimum_chrome_version": "116",
+  "permissions": [
+    "storage",
+    "alarms",
+    "notifications",
+    "contextMenus",
+    "identity",
+    "sidePanel"
+  ],
+  "host_permissions": [
+    "https://www.googleapis.com/*",
+    "https://oauth2.googleapis.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_icon": {
+      "48": "icons/icon-48.png",
+      "96": "icons/icon-96.png"
+    },
+    "default_title": "Zen Todo",
+    "default_popup": "popup.html"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Alt+Shift+T"
+      },
+      "description": "Zen Todo"
+    },
+    "zen-sidebar": {
+      "suggested_key": {
+        "default": "Alt+Shift+Z"
+      },
+      "description": "Zen Todo (panneau lateral)"
+    }
+  }
+}
