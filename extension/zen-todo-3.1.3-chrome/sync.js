@@ -198,17 +198,39 @@ Sync.account = async () => {
   return (gAccount && typeof gAccount === "object") ? gAccount : null;
 };
 
+// { email, status } ; status = 0 quand la requête n'a pas abouti (réseau).
+async function userinfo(token) {
+  try {
+    const r = await fetch(SYNC_API + "/oauth2/v3/userinfo", { headers: { Authorization: "Bearer " + token } });
+    if (!r.ok) return { email: "", status: Number(r.status) || 0 };
+    const j = await r.json().catch(() => null);
+    return { email: j && typeof j.email === "string" ? cleanText(j.email, 80) : "", status: Number(r.status) || 0 };
+  } catch (e) { return { email: "", status: 0 }; }
+}
 async function fetchEmail(token) {
-  const r = await fetch(SYNC_API + "/oauth2/v3/userinfo", { headers: { Authorization: "Bearer " + token } });
-  if (!r.ok) return "";
-  const j = await r.json().catch(() => null);
-  return j && typeof j.email === "string" ? cleanText(j.email, 80) : "";
+  return (await userinfo(token)).email;
 }
 
-/* Fin commune de la connexion : jetons, e-mail, puis première synchronisation. */
+/* E-mail du compte après une connexion interactive. Un unique échec transitoire (réseau, 5xx)
+   enregistrait auparavant un compte inconnu (e-mail vide), ce qui rendait ensuite toute
+   renégociation silencieuse impossible (getToken exige un e-mail connu) jusqu'à une reconnexion
+   manuelle. Une seule relance, et seulement si l'erreur est transitoire : 4xx (jeton refusé,
+   identité absente) ne changerait pas au second essai. */
+const USERINFO_RETRY_MS = 300;
+async function fetchEmailRetry(token) {
+  let r = await userinfo(token);
+  if (r.email || (r.status >= 400 && r.status < 500)) return r.email;
+  await new Promise((ok) => setTimeout(ok, USERINFO_RETRY_MS));
+  r = await userinfo(token);
+  return r.email;
+}
+
+/* Fin commune de la connexion : jetons, e-mail, puis première synchronisation.
+   E-mail toujours inconnu après la relance : on garde le comportement d'origine (compte inconnu),
+   car mémoriser un jeton non rattaché à un compte vérifié casserait l'invariant de getToken. */
 async function finishSignIn(res) {
   await api.storage.local.set({ gToken: res, gAccount: { email: "", ts: Date.now() }, lastSync: 0 });
-  const email = await fetchEmail(res.token).catch(() => "");
+  const email = await fetchEmailRetry(res.token);
   await api.storage.local.set({ gAccount: { email, ts: Date.now() } });
   await doSync(true).catch(() => {});
 }
