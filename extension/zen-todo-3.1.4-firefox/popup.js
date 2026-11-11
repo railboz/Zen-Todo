@@ -1355,9 +1355,13 @@ $("restore-backup").addEventListener("click", async () => {
   $("msg").textContent = t("restoreDone");
 });
 
-function applyLang(l) {
+function applyLang(l, opts) {
   if (!isLang(l)) l = defaultLang();   // valeur absente/inconnue : langue du navigateur, jamais l'anglais par accident
-  setLang(l); applyStaticI18n(); render(); addDue.refresh(); addRepeat.refresh(); resetWipe(); resetRestore(); loadShortcut(); labelSidebarBtn();
+  setLang(l); applyStaticI18n(); render(); addDue.refresh(); addRepeat.refresh(); resetWipe(); resetRestore();
+  // Au démarrage, les raccourcis (3 appels api.commands.getAll) attendent la première peinture :
+  // ils ne sont pas nécessaires à l'affichage de la liste.
+  if (!(opts && opts.deferShortcuts)) loadShortcut();
+  labelSidebarBtn();
   if (!$("toast").hidden) $("toast-undo").textContent = t("undo");
   document.querySelectorAll(".lang[data-lang]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.lang === l)));
 }
@@ -1402,13 +1406,17 @@ api.storage.local.get({ tasks: [], lang: null, defaultPriority: "medium", badge:
   $("badge-toggle").checked = s.badge;
   $("sound-toggle").checked = soundOn;
   applyThemeOnStartup(s.theme || "dark"); applyThemeUI();
-  applyLang(s.lang || defaultLang());
+  applyLang(s.lang || defaultLang(), { deferShortcuts: true });
   applyTextSize(s.textSize);
   $("new-priority").value = defaultPriority; renderPrioChips();
-  renderSyncUI();
-  // Laisser le premier rendu se peindre avant la synchro réseau : l'ouverture reste fluide
-  // même si Google est lent ou si la session doit être renégociée.
-  requestAnimationFrame(() => setTimeout(() => Sync.auto(), 0));
+  // Rien de tout cela n'est nécessaire à la première peinture : bloc synchro, raccourcis puis
+  // synchro réseau passent après la frame de rendu (l'ouverture reste fluide même si Google est
+  // lent ou si la session doit être renégociée).
+  requestAnimationFrame(() => {
+    renderSyncUI();
+    loadShortcut();
+    setTimeout(() => Sync.auto(), 0);
+  });
   if (currentTab === "projects") $("new-project").focus(); else $("new-text").focus();
 });
 $("theme-toggle").addEventListener("click", () => { setTheme(THEME === "dark" ? "light" : "dark"); applyThemeUI(); api.storage.local.set({ theme: THEME }); touchSettings(); });
