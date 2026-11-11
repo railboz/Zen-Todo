@@ -103,6 +103,7 @@ async function sync(force = false) {
   const sig = buildSig(items, fires, s.notified, s.badge, s.lang, now);
   if (!force && s.bgSig === sig) return;   // rien n'a changé depuis le dernier passage réussi : aucun IPC alarme/badge
 
+  let ok = true;   // un échec d'émission empêche l'écriture de la signature : le passage sera rejoué
   const desired = new Map();   // alarmes « r:<id> » à laisser en place
   for (let i = 0; i < items.length; i++) {
     const tk = items[i], f = fires[i];
@@ -116,15 +117,18 @@ async function sync(force = false) {
       // Une tâche créée ou modifiée APRÈS l'heure du rappel ne déclenche pas de notification rétroactive.
       // Cas typique : l'occurrence suivante d'une tâche récurrente, créée à l'instant avec une échéance déjà passée.
       const modifiedAfter = (Number(tk.updatedAt) || 0) > f;
-      if (!modifiedAfter && now - f < 24 * 3600 * 1000) { try { await notify(tk); } catch (e) {} } // rappel manqué (< 24 h) : ne doit jamais bloquer la création des alarmes
-      keep[tk.id] = f;
+      let sent = true;
+      // rappel manqué (< 24 h) : ne doit jamais bloquer la création des alarmes. Si l'émission échoue
+      // (notifications coupées au niveau de l'OS, icône illisible…), l'occurrence n'est PAS mémorisée :
+      // la signature n'est pas écrite et le passage suivant réessaie. La borne de 24 h arrête les essais.
+      if (!modifiedAfter && now - f < 24 * 3600 * 1000) { try { await notify(tk); } catch (e) { sent = false; } }
+      if (sent) keep[tk.id] = f; else ok = false;
     } else {
       desired.set("r:" + tk.id, f);
     }
   }
   // Ne touche QUE les rappels « r:* ». Effacer aussi « gsync » remettrait son compteur de 15 min à zéro
   // à chaque modification de tâche : la synchro périodique pourrait alors ne jamais se déclencher.
-  let ok = true;
   const existing = await api.alarms.getAll().catch(() => { ok = false; return []; });
   const scheduled = new Map();
   let hasGsync = false, midnightAt = null;
