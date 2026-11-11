@@ -1,0 +1,9 @@
+# Intentional duplicate-file references in manifest.json.
+#
+# Format: <path relative to the variant directory> | <justification>
+# Chrome/Firefox reuse icon files in both "icons" and "action.default_icon",
+# and Firefox uses popup.html for both the toolbar popup and the sidebar panel.
+# Any OTHER duplicate reference is treated as a manifest bug by the harness.
+icons/icon-48.png | Same icon asset referenced by "icons" and "action.default_icon" (browser metadata reuse)
+icons/icon-96.png | Same icon asset referenced by "icons" and "action.default_icon" (browser metadata reuse)
+popup.html | Firefox uses popup.html for both action.default_popup and sidebar_action.default_panel (one shared UI)
