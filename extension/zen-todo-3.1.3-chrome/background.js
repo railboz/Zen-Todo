@@ -14,10 +14,13 @@ const DEBOUNCE_MS = 100;    // regroupe les écritures d'un même lot (tasks + p
 const ALARM_BATCH = 10;     // IPC par paquets : borner la concurrence
 
 // Appelle une méthode de l'API sans jamais interrompre le passage en cours ; renvoie true si elle a réussi.
+// `false` explicite = échec (alarms.clear signale ainsi qu'il n'a rien pu effacer). `undefined` reste un
+// succès : alarms.create ne renvoie rien sur Chrome MV3, le compter comme un échec interdirait toute
+// écriture de signature et ferait un passage complet à chaque réveil.
 function settle(fn) {
   try {
     const r = fn();
-    return r && typeof r.then === "function" ? r.then(() => true, () => false) : Promise.resolve(true);
+    return r && typeof r.then === "function" ? r.then(v => v !== false, () => false) : Promise.resolve(r !== false);
   } catch (e) { return Promise.resolve(false); }
 }
 
@@ -33,19 +36,29 @@ function stateHash(s) {
 }
 
 // Tout ce qui peut changer l'état appliqué : tâches/projets (donc alarmes), rappels déjà traités,
-// badge, langue, date locale (retard et alarme de minuit) et rappel échu restant à traiter.
-// Ce dernier point est capital : une alarme qui se déclenche popup fermé ne modifie ni la liste ni
-// `notified`, seul ce drapeau distingue « rien à faire » de « notification à émettre ».
-function buildSig(items, fires, notified, badge, lang, now) {
+// badge, langue, date locale (retard et alarme de minuit), rappel échu restant à traiter et alarmes
+// réellement présentes (`alarms`). Ces deux derniers points sont capitaux : une alarme qui se déclenche
+// popup fermé ne modifie ni la liste ni `notified`, seul ce drapeau distingue « rien à faire » de
+// « notification à émettre » ; et une alarme disparue sans changement de données (midnight après son
+// tir, gsync effacé par le navigateur) ne serait jamais recréée si l'observation n'entrait pas dans
+// la signature.
+function buildSig(items, fires, notified, badge, lang, now, alarms) {
   let due = 0;
   for (let i = 0; i < items.length && !due; i++) if (fires[i] !== null && notified[items[i].id] !== fires[i] && fires[i] <= now) due = 1;
-  const p = [localTodayIso(), badge ? 1 : 0, lang || "", due];
+  const p = [localTodayIso(), badge ? 1 : 0, lang || "", due, alarms || ""];
   for (let i = 0; i < items.length; i++) {
     const tk = items[i];
     p.push([tk.id, tk.text, tk.due, tk.time, tk.remind, tk.done ? 1 : 0, tk.updatedAt || 0, fires[i]].join("\u0000"));
   }
   for (const k of Object.keys(notified).sort()) p.push(k + "=" + notified[k]);
   return stateHash(p.join("\u0001"));
+}
+
+// Empreinte de l'ensemble d'alarmes observé : noms des rappels en place + présence des deux alarmes
+// fixes. Leurs heures n'y figurent pas : « gsync » se replanifie à chaque tir et « midnight » change
+// de date, ce qui ferait échouer la signature à chaque passage.
+function alarmsSig(scheduled, hasGsync, hasMidnight) {
+  return [...scheduled.keys()].sort().join(",") + "|" + (hasGsync ? 1 : 0) + (hasMidnight ? 1 : 0);
 }
 
 // scheduledTime (Firefox et Chrome MV3) avec repli sur l'ancien champ `when`.
@@ -100,10 +113,21 @@ async function sync(force = false) {
   // les projets datés se comportent comme des tâches pour les rappels
   const items = [...s.tasks, ...s.projects.map(p => ({ id: p.id, text: p.name, due: p.due, time: p.time, remind: p.remind, done: isProjectDone(p), updatedAt: p.updatedAt }))];
   const fires = items.map(fireTime);
-  const sig = buildSig(items, fires, s.notified, s.badge, s.lang, now);
-  if (!force && s.bgSig === sig) return;   // rien n'a changé depuis le dernier passage réussi : aucun IPC alarme/badge
+  // Ensemble d'alarmes réellement présent, lu AVANT la comparaison de signature car il en fait partie.
+  // Coût : un getAll de plus sur le réveil inchangé, en échange d'une alarme disparue toujours recréée.
+  let ok = true;
+  const existing = await api.alarms.getAll().catch(() => { ok = false; return []; });
+  const scheduled = new Map();   // alarmes « r:<id> » actuellement en place
+  let hasGsync = false, midnightAt = null;
+  for (const a of existing) {
+    if (!a || typeof a.name !== "string") continue;
+    if (a.name.startsWith("r:")) scheduled.set(a.name, alarmTime(a));
+    else if (a.name === "gsync") hasGsync = true;
+    else if (a.name === "midnight") midnightAt = alarmTime(a);
+  }
+  const sig = buildSig(items, fires, s.notified, s.badge, s.lang, now, alarmsSig(scheduled, hasGsync, midnightAt !== null));
+  if (!force && ok && s.bgSig === sig) return;   // rien n'a changé depuis le dernier passage réussi : aucun IPC alarme/badge
 
-  let ok = true;   // un échec d'émission empêche l'écriture de la signature : le passage sera rejoué
   const desired = new Map();   // alarmes « r:<id> » à laisser en place
   for (let i = 0; i < items.length; i++) {
     const tk = items[i], f = fires[i];
@@ -129,15 +153,6 @@ async function sync(force = false) {
   }
   // Ne touche QUE les rappels « r:* ». Effacer aussi « gsync » remettrait son compteur de 15 min à zéro
   // à chaque modification de tâche : la synchro périodique pourrait alors ne jamais se déclencher.
-  const existing = await api.alarms.getAll().catch(() => { ok = false; return []; });
-  const scheduled = new Map();
-  let hasGsync = false, midnightAt = null;
-  for (const a of existing) {
-    if (!a || typeof a.name !== "string") continue;
-    if (a.name.startsWith("r:")) scheduled.set(a.name, alarmTime(a));
-    else if (a.name === "gsync") hasGsync = true;
-    else if (a.name === "midnight") midnightAt = alarmTime(a);
-  }
   // Différentiel : seuls les rappels disparus, ajoutés ou déplacés coûtent un appel.
   const stale = [...scheduled.keys()].filter(n => !desired.has(n));
   const missing = [...desired].filter(([n, w]) => { const cur = scheduled.get(n); return cur === undefined || !sameTime(cur, w); });
@@ -162,7 +177,9 @@ async function sync(force = false) {
   // Signature écrite en dernier, et seulement si tout a réussi : un arrêt du worker en cours de passage
   // (ou un appel d'alarme refusé) provoquera un passage complet au réveil suivant, jamais un état
   // à moitié appliqué considéré comme à jour.
-  const finalSig = buildSig(items, fires, keep, s.badge, s.lang, now);
+  // L'empreinte d'alarmes décrit l'état attendu APRÈS ce passage (les rappels voulus + les deux fixes) :
+  // c'est exactement ce que le getAll du prochain réveil observera si la réconciliation a abouti.
+  const finalSig = buildSig(items, fires, keep, s.badge, s.lang, now, alarmsSig(desired, true, true));
   const writes = {};
   if (JSON.stringify(keep) !== JSON.stringify(s.notified)) writes.notified = keep;
   if (ok && s.bgSig !== finalSig) writes[SIG_KEY] = finalSig;
