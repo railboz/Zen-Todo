@@ -74,6 +74,11 @@ function playSound(type) {
 
 const $ = (id) => document.getElementById(id);
 const list = $("list");
+// SEC-10 : les identifiants lus dans le stockage sont déjà contraints par safeId(), mais une
+// valeur n'est jamais concaténée brute dans un sélecteur CSS : on l'échappe (une donnée
+// inattendue ne peut pas viser un autre nœud que celui voulu).
+const cssEsc = (s) => (typeof CSS !== "undefined" && typeof CSS.escape === "function")
+  ? CSS.escape(String(s)) : String(s).replace(/["\\]/g, "\\$&");
 const SVG = {
   check: '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7"/></svg>',
   up: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>',
@@ -120,6 +125,13 @@ function persist() {
 function touchSettings() { setTs = Date.now(); api.storage.local.set({ setTs }); Sync.markDirty(); }
 function tombstone(kind, id) { if (!safeId(id)) return; syncDel[kind][id] = Date.now(); api.storage.local.set({ del: syncDel }); }
 function untombstone(kind, id) { if (!safeId(id) || !syncDel[kind]) return; delete syncDel[kind][id]; api.storage.local.set({ del: syncDel }); }
+// SEC-09 : l'objet `del` lu dans le stockage passe par normDel() (sync.js) — validation stricte des
+// identifiants et purge des pierres tombales expirées — au lieu d'être recopié tel quel.
+// Garde `typeof` : hors navigateur (test), sync.js peut être absent.
+function readDel(d) {
+  if (typeof normDel === "function") return normDel(d);
+  return (d && typeof d === "object") ? { t: (d.t && typeof d.t === "object") ? d.t : {}, p: (d.p && typeof d.p === "object") ? d.p : {} } : { t: {}, p: {} };
+}
 
 // Si l'heure du rappel est déjà passée à l'enregistrement, on évite une notification immédiate.
 async function markPast(task) {
@@ -419,7 +431,7 @@ function completeToggle(task) {
 
 // Le rendu reconstruit la liste : sans cela, le focus retombait sur le document après chaque clic.
 function focusTaskCheck(id) {
-  let n = list.querySelector('.task[data-id="' + id + '"] .check');
+  let n = list.querySelector('.task[data-id="' + cssEsc(id) + '"] .check');
   // Tâche devenue invisible (filtre « À faire », recherche, tri) : ne pas laisser le focus au document.
   if (!n) n = list.querySelector(".task .check") || (IS_ANDROID ? $("add-btn") : $("new-text"));
   if (!n) return;
@@ -427,18 +439,18 @@ function focusTaskCheck(id) {
 }
 // Retour du focus sur le bouton « Modifier » après la fermeture d'une feuille ou d'une édition.
 function focusTaskEdit(id) {
-  const n = list.querySelector('.task[data-id="' + id + '"] .edit-btn') || (IS_ANDROID ? $("add-btn") : $("new-text"));
+  const n = list.querySelector('.task[data-id="' + cssEsc(id) + '"] .edit-btn') || (IS_ANDROID ? $("add-btn") : $("new-text"));
   if (!n) return;
   try { n.focus({ preventScroll: true }); } catch (e) { try { n.focus(); } catch (e2) {} }
 }
 function focusProjectEdit(id) {
-  const n = $("project-list").querySelector('.project[data-id="' + id + '"] .p-edit-btn') || $("new-project");
+  const n = $("project-list").querySelector('.project[data-id="' + cssEsc(id) + '"] .p-edit-btn') || $("new-project");
   if (!n) return;
   try { n.focus({ preventScroll: true }); } catch (e) { try { n.focus(); } catch (e2) {} }
 }
 // Après l'édition d'une sous-tâche, revenir sur son bouton « Modifier ».
 function focusSubButton(pid, sid) {
-  const n = $("project-list").querySelector('.project[data-id="' + pid + '"] .stask[data-sub-id="' + sid + '"] .mini');
+  const n = $("project-list").querySelector('.project[data-id="' + cssEsc(pid) + '"] .stask[data-sub-id="' + cssEsc(sid) + '"] .mini');
   if (!n) return;
   try { n.focus({ preventScroll: true }); } catch (e) { try { n.focus(); } catch (e2) {} }
 }
@@ -656,7 +668,7 @@ function renderProjects() {
   enterProj = null; enterSub = null; doneSub = null;
   let didFocus = false;
   if (focusSubFor) {
-    const inp = pl.querySelector(`[data-sub-input="${focusSubFor}"]`);
+    const inp = pl.querySelector(`[data-sub-input="${cssEsc(focusSubFor)}"]`);
     if (inp) { inp.focus(); didFocus = true; }
     focusSubFor = null;
   }
@@ -864,7 +876,7 @@ function renderProjectsKeepInput() {
   const top = view ? view.scrollTop : 0;
   renderProjects();
   if (keep) {
-    const inp = $("project-list").querySelector(`[data-sub-input="${keep.id}"]`);
+    const inp = $("project-list").querySelector(`[data-sub-input="${cssEsc(keep.id)}"]`);
     if (inp) {
       inp.value = keep.v;
       try { inp.focus({ preventScroll: true }); } catch (e) { inp.focus(); }   // évite un saut sur Android
@@ -1260,7 +1272,7 @@ api.storage.local.get({ tasks: [], lang: null, defaultPriority: "medium", badge:
   tasks = normTasks(s.tasks); defaultPriority = PRIOS.includes(s.defaultPriority) ? s.defaultPriority : "medium";
   filter = FILTERS.includes(s.filter) ? s.filter : "all";
   projects = normProjects(s.projects);
-  syncDel = (s.del && typeof s.del === "object") ? { t: (s.del.t && typeof s.del.t === "object") ? s.del.t : {}, p: (s.del.p && typeof s.del.p === "object") ? s.del.p : {} } : { t: {}, p: {} };
+  syncDel = readDel(s.del);
   setTs = Number(s.setTs) || 0;
   currentTab = s.tab === "projects" ? "projects" : "tasks"; applyView();
   // « manual » est une valeur volontaire : ne pas retomber sur l'ancienne clé « sort » (héritage)
@@ -1295,7 +1307,7 @@ function scheduleRender() {
 api.storage.onChanged.addListener((ch) => {
   if (ch.filter) { filter = FILTERS.includes(ch.filter.newValue) ? ch.filter.newValue : "all"; scheduleRender(); }
   if (ch.badge) $("badge-toggle").checked = !!ch.badge.newValue;
-  if (ch.del) { const d = ch.del.newValue; syncDel = (d && typeof d === "object") ? { t: (d.t && typeof d.t === "object") ? d.t : {}, p: (d.p && typeof d.p === "object") ? d.p : {} } : { t: {}, p: {} }; }
+  if (ch.del) syncDel = readDel(ch.del.newValue);
   if (ch.gAccount || ch.lastSync) renderSyncUI();
   if (ch.syncState) {
     const s = ch.syncState.newValue;
