@@ -1,5 +1,7 @@
 # Zen Todo — code source de l'extension
 
+Version courante : **3.1.10** (correctif de synchronisation Google du 11/11/2026).
+
 Ce dossier contient le code source de l'extension Zen Todo, en deux variantes :
 
 - `zen-todo-3.1.4-firefox/` — Firefox (Manifest V3, `background.scripts`, `sidebar_action`) ;
