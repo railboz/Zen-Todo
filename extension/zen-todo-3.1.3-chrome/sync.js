@@ -176,19 +176,63 @@ async function authFlow(prompt) {
   return parseAuthRedirect(final, state);
 }
 
+/* ---------- états d'authentification ----------
+   « reauth » (DUR) : session réellement expirée, ou un AUTRE compte que celui enregistré. L'interface
+     parle de « session expirée », les synchros automatiques s'arrêtent et la reconnexion est manuelle.
+   « reauth-transient » : identité ou session invérifiable POUR L'INSTANT (réseau, userinfo muet, Google
+     injoignable). Rien n'est poussé ni téléchargé, aucun jeton n'est mémorisé, mais la synchro n'est
+     PAS gelée : nouvelle tentative au cycle suivant (backoff de 60 s de Sync.auto). Après
+     TRANSIENT_MAX échecs consécutifs, escalade vers « reauth » pour que l'interface ne reste pas
+     muette indéfiniment (une révocation côté Google ne se distingue pas d'une panne réseau). */
+const TRANSIENT_CODE = "reauth-transient";
+const TRANSIENT_MAX = 3;
+
+// Échec transitoire : compté, puis escaladé en « reauth » au seuil. Hors ligne ce n'est pas une
+// question d'identité mais de réseau : on n'incrémente pas (sinon 3 ouvertures hors ligne
+// afficheraient « session expirée ») et on laisse l'état « network ».
+async function noteTransient(detail) {
+  if (typeof navigator !== "undefined" && navigator.onLine === false) { await record("network", detail); return "network"; }
+  const { syncTransientFails } = await api.storage.local.get({ syncTransientFails: 0 });
+  const n = (Number(syncTransientFails) || 0) + 1;
+  await api.storage.local.set({ syncTransientFails: n });
+  const code = n >= TRANSIENT_MAX ? "reauth" : TRANSIENT_CODE;
+  await record(code, detail);
+  return code;
+}
+/* Code à renvoyer quand aucun jeton vérifié n'est disponible : l'état exact (dur ou transitoire) a
+   déjà été consigné par getToken/noteTransient, on ne le remplace pas par un « reauth » générique
+   (une panne réseau ne doit pas être annoncée comme une session expirée). */
+async function authCode() {
+  if (typeof navigator !== "undefined" && navigator.onLine === false) return "network";
+  const { syncState } = await api.storage.local.get({ syncState: null });
+  return (syncState && syncState.code === "reauth") ? "reauth" : TRANSIENT_CODE;
+}
+
 async function getToken(force) {
   const { gToken } = await api.storage.local.get({ gToken: null });
   if (!force && gToken && typeof gToken.token === "string" && Number(gToken.expiresAt) - 60000 > Date.now()) return gToken.token;
   const res = await authFlow("none");   // jeton expiré : renégociation silencieuse, sans fenêtre
-  if (!res) return null;
+  if (!res) {
+    // Aucune fenêtre n'a été ouverte : ce n'est pas une session expirée mais une renégociation
+    // impossible maintenant (réseau, ou jeton révoqué/refusé). Hors ligne, noteTransient() laisse
+    // l'état « network » ; en ligne, l'escalade finira par demander une reconnexion.
+    await noteTransient();
+    return null;
+  }
   // Renégociation silencieuse (prompt=none) : Google répond avec le compte par défaut du navigateur, qui
   // n'est pas forcément celui qui a autorisé l'extension (login_hint vide après un échec de fetchEmail).
   // Mémoriser un tel jeton écrirait les tâches dans le appDataFolder d'un AUTRE compte : on vérifie donc
-  // l'identité du porteur avant de garder quoi que ce soit. Compte enregistré ou identité inconnus = refus.
+  // l'identité du porteur avant de garder quoi que ce soit.
   const expected = await accountHint();
-  const who = await fetchEmail(res.token).catch(() => "");
-  if (!expected || !who || who !== expected) { await record("reauth"); return null; }
-  await api.storage.local.set({ gToken: res });
+  const who = await fetchEmail(res.token);
+  if (expected && who && who !== expected) { await record("reauth"); return null; }   // autre compte : DUR, rien n'est mémorisé
+  // Identité invérifiable : transitoire. On ne mémorise pas le jeton (invariant : jamais de jeton
+  // rattaché à un compte non vérifié) et on réessaiera au cycle suivant.
+  if (!who) { await noteTransient(); return null; }
+  // Compte enregistré inconnu (échec de userinfo à la connexion) mais identité résolue : on répare
+  // l'e-mail au lieu de refuser indéfiniment.
+  if (!expected) await api.storage.local.set({ gAccount: { email: who, ts: Date.now() } });
+  await api.storage.local.set({ gToken: res, syncTransientFails: 0 });
   return res.token;
 }
 
@@ -231,7 +275,9 @@ async function fetchEmailRetry(token) {
 async function finishSignIn(res) {
   await api.storage.local.set({ gToken: res, gAccount: { email: "", ts: Date.now() }, lastSync: 0 });
   const email = await fetchEmailRetry(res.token);
-  await api.storage.local.set({ gAccount: { email, ts: Date.now() } });
+  const done = { gAccount: { email, ts: Date.now() } };
+  if (email) done.syncTransientFails = 0;   // identité connue : le compteur d'échecs transitoires repart à zéro
+  await api.storage.local.set(done);
   await doSync(true).catch(() => {});
 }
 
@@ -255,7 +301,7 @@ Sync.signOut = async () => {
   if (gToken && typeof gToken.token === "string") {
     try { await fetch("https://oauth2.googleapis.com/revoke?token=" + encodeURIComponent(gToken.token), { method: "POST" }); } catch (e) {}
   }
-  await api.storage.local.remove(["gToken", "gAccount", "lastSync", "lastAttempt", "syncState", "gFileId"]);
+  await api.storage.local.remove(["gToken", "gAccount", "lastSync", "lastAttempt", "syncState", "syncTransientFails", "gFileId"]);
   return "ok";
 };
 
@@ -445,6 +491,11 @@ function syncErrCode(e) {
   if (msg === "noauth") return (typeof navigator !== "undefined" && navigator.onLine === false) ? "network" : "reauth";
   return isNetErr(e) ? "network" : "err";
 }
+/* Code d'erreur d'un cycle : « noauth » = plus de jeton vérifié, cas déjà qualifié (dur ou
+   transitoire) par getToken/noteTransient — on ne le requalifie pas en « reauth » ici. */
+async function errCode(e) {
+  return String((e && e.message) || e) === "noauth" ? await authCode() : syncErrCode(e);
+}
 // Comparaison insensible à l'ordre des listes ET à l'ordre des clés de tous les objets :
 // deux appareils qui n'ordonnent pas leurs tâches ou leurs propriétés de la même façon
 // ne doivent pas se réexpédier le fichier à chaque cycle. L'ordre des listes reste local
@@ -491,7 +542,7 @@ async function doSyncLocked(force) {
   if (!Sync.configured()) return "noauth";
   const acct = await Sync.account();
   if (!acct) return "noauth";
-  const email = typeof acct.email === "string" ? acct.email : "";
+  let email = typeof acct.email === "string" ? acct.email : "";
   // Anti-doublon : popup.js et background.js programment chacun un cycle 2,5 s après une modification,
   // soit deux cycles complets (4 GET, 2 lectures locales) pour une seule édition. Le second démarre juste
   // après le premier : ignoré, il ne coûte plus rien. Le verrou garantit que les deux contextes lisent le
@@ -501,6 +552,19 @@ async function doSyncLocked(force) {
     if (Number(done) && Date.now() - Number(done) < DUP_WINDOW) return "ok";
   }
   await api.storage.local.set({ lastAttempt: Date.now() });   // toute tentative, réussie ou non (backoff de Sync.auto)
+  // Compte inconnu (userinfo en échec lors de la connexion) : réparer AVANT tout appel Drive. Sans
+  // e-mail, getToken refuse la renégociation silencieuse et la synchro resterait gelée pour toujours.
+  if (!email) {
+    const tk = await getToken(false);
+    if (!tk) return await authCode();          // transitoire ou dur : déjà consigné, aucun appel Drive
+    email = await accountHint();               // getToken a pu réparer l'e-mail pendant la renégociation
+    if (!email) {
+      const who = await fetchEmail(tk);        // une seule tentative, avant tout accès au Drive
+      if (!who) return await noteTransient();  // identité toujours inconnue : on ne synchronise pas
+      email = who;
+      await api.storage.local.set({ gAccount: { email, ts: Date.now() } });
+    }
+  }
   let fileId = await cachedFileId(email), remote = null;
   const cachedId = fileId;
   try {
@@ -518,7 +582,7 @@ async function doSyncLocked(force) {
     }
     // fichier vide/illisible : on repart sur un NOUVEAU fichier plutôt que d'échouer à chaque cycle
     if (remote && remote.__corrupt === true) { fileId = null; remote = null; }
-  } catch (e) { const c = syncErrCode(e); await record(c, e && e.detail); return c; }
+  } catch (e) { const c = await errCode(e); await record(c, e && e.detail); return c; }
   if (remote !== null && (typeof remote !== "object" || Array.isArray(remote))) { await record("err"); return "err"; }   // cloud illisible : on ne l'écrase pas
   // L'état local est lu APRÈS l'attente réseau : une modification faite pendant la lecture distante n'est plus écrasée.
   let local = await buildLocal();
@@ -541,22 +605,23 @@ async function doSyncLocked(force) {
   const changed = !remote || typeof remote !== "object" || canonicalDoc(doc) !== canonicalDoc(remote);
   if (changed) {
     try { const newId = await uploadFile(fileId, out); if (newId) fileId = newId; }   // création : l'id du nouveau fichier
-    catch (e) { const c = syncErrCode(e); await record(c, e && e.detail); return c; }
+    catch (e) { const c = await errCode(e); await record(c, e && e.detail); return c; }
   }
   const now = Date.now();
-  const done = { lastSync: now };   // lastSync sert aussi de repère anti-doublon : écrit seulement en cas de succès
+  // lastSync (repère anti-doublon) et compteur transitoire : écrits seulement en cas de SUCCÈS.
+  const done = { lastSync: now, syncTransientFails: 0 };
   if (fileId && email && fileId !== cachedId) done.gFileId = { id: fileId, email };   // mémorise l'id sans second aller-retour
   await api.storage.local.set(done);
   await record("ok");
   return "ok";
 }
 
-/* Interface publique : synchro immédiate (résultat = "ok" | "network" | "err" | "noauth" | "reauth"). */
+/* Interface publique : synchro immédiate (résultat = "ok" | "network" | "err" | "noauth" | "reauth" | "reauth-transient"). */
 Sync.syncNow = () => new Promise((resolve) => {
   // la file ne doit jamais rester rejetée : on récupère une éventuelle erreur avant de chaîner
   syncChain.busy = syncChain.busy.catch(() => {}).then(() => doSync(true)).then(
     (r) => resolve(r),
-    (e) => resolve(syncErrCode(e))
+    async (e) => resolve(await errCode(e))
   );
 });
 /* Une modification locale vient d'avoir lieu : pousser après un court délai (regroupe les saisies rapides). */
