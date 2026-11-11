@@ -1,0 +1,8 @@
+# Sink allow-list for tools/tests/checks/security.mjs.
+#
+# Format: <regex matched against "<file>:<line>: <source line>"> | <justification>
+# Lines starting with "#" are ignored; an entry WITHOUT a justification makes the
+# harness fail, so exceptions can never be added silently.
+#
+# Keep this list empty unless a false positive is genuinely unavoidable: a sink
+# hidden behind an allow-list entry is still a sink.
