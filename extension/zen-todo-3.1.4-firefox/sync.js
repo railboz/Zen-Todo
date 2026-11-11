@@ -301,7 +301,7 @@ Sync.signOut = async () => {
   if (gToken && typeof gToken.token === "string") {
     try { await fetch("https://oauth2.googleapis.com/revoke?token=" + encodeURIComponent(gToken.token), { method: "POST" }); } catch (e) {}
   }
-  await api.storage.local.remove(["gToken", "gAccount", "lastSync", "lastAttempt", "syncState", "syncTransientFails", "gFileId"]);
+  await api.storage.local.remove(["gToken", "gAccount", "lastSync", "lastSyncSig", "lastAttempt", "syncState", "syncTransientFails", "gFileId"]);
   return "ok";
 };
 
@@ -518,6 +518,21 @@ function canonicalDoc(d) {
   const byId = (list) => (Array.isArray(list) ? list.slice() : []).sort((a, b) => String(a && a.id).localeCompare(String(b && b.id)));
   return JSON.stringify(canon({ v: d && d.v, tasks: byId(d && d.tasks), projects: byId(d && d.projects), del: (d && d.del) || {}, set: d && d.set }));
 }
+/* Empreinte du contenu local à pousser : comparaison exacte et insensible à l'ordre des listes et
+   des clés (même discipline que canonicalDoc). L'anti-doublon s'appuie dessus : on ne saute un cycle
+   que si l'état local est IDENTIQUE à celui du dernier envoi réussi. Un horodatage seul ne suffit pas
+   (un cycle lancé avant une modification et terminé après elle écrirait un lastSync postérieur à
+   l'édition ; l'édition serait alors considérée comme déjà poussée et perdue jusqu'au cycle suivant). */
+function sigHash(str) {
+  let h1 = 0x811c9dc5, h2 = 0x01000193;   // deux graines : 64 bits, une collision ne peut pas faire sauter un envoi
+  for (let i = 0; i < str.length; i++) {
+    const c = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 0x01000193) >>> 0;
+    h2 = Math.imul(h2 ^ c, 0x85ebca6b) >>> 0;
+  }
+  return h1.toString(16).padStart(8, "0") + h2.toString(16).padStart(8, "0");
+}
+const localSig = (local) => sigHash(canonicalDoc({ v: 1, tasks: local.tasks, projects: local.projects, del: local.del, set: local.set }));
 // Un seul cycle à la fois, même entre le popup et l'arrière-plan (deux contextes JS distincts de la même origine) :
 // sans ce verrou, deux synchros simultanées pouvaient créer deux fichiers Drive ou s'écraser mutuellement.
 // force = true : demande explicite (bouton « Synchroniser », réveil périodique), jamais ignorée comme doublon.
@@ -545,11 +560,14 @@ async function doSyncLocked(force) {
   let email = typeof acct.email === "string" ? acct.email : "";
   // Anti-doublon : popup.js et background.js programment chacun un cycle 2,5 s après une modification,
   // soit deux cycles complets (4 GET, 2 lectures locales) pour une seule édition. Le second démarre juste
-  // après le premier : ignoré, il ne coûte plus rien. Le verrou garantit que les deux contextes lisent le
-  // même lastSync, et lastSync n'est écrit qu'en cas de SUCCÈS : un échec n'est jamais masqué par ce filtre.
+  // après le premier : ignoré, il ne coûte plus rien. Condition : son état local doit être IDENTIQUE à
+  // celui du dernier envoi réussi (empreinte de contenu) — un simple « succès récent » ne dit rien de la
+  // modification, et un cycle lancé avant une édition ne doit jamais la faire passer pour poussée.
   if (!force) {
-    const { lastSync: done } = await api.storage.local.get({ lastSync: 0 });
-    if (Number(done) && Date.now() - Number(done) < DUP_WINDOW) return "ok";
+    const { lastSync: done, lastSyncSig: sig } = await api.storage.local.get({ lastSync: 0, lastSyncSig: "" });
+    if (Number(done) && Date.now() - Number(done) < DUP_WINDOW && typeof sig === "string" && sig) {
+      if (localSig(await buildLocal()) === sig) return "ok";
+    }
   }
   await api.storage.local.set({ lastAttempt: Date.now() });   // toute tentative, réussie ou non (backoff de Sync.auto)
   // Compte inconnu (userinfo en échec lors de la connexion) : réparer AVANT tout appel Drive. Sans
@@ -608,8 +626,8 @@ async function doSyncLocked(force) {
     catch (e) { const c = await errCode(e); await record(c, e && e.detail); return c; }
   }
   const now = Date.now();
-  // lastSync (repère anti-doublon) et compteur transitoire : écrits seulement en cas de SUCCÈS.
-  const done = { lastSync: now, syncTransientFails: 0 };
+  // lastSync + empreinte de l'état poussé : repères anti-doublon, écrits seulement en cas de SUCCÈS.
+  const done = { lastSync: now, lastSyncSig: localSig(m), syncTransientFails: 0 };   // cycle réussi : compteur transitoire remis à zéro
   if (fileId && email && fileId !== cachedId) done.gFileId = { id: fileId, email };   // mémorise l'id sans second aller-retour
   await api.storage.local.set(done);
   await record("ok");
