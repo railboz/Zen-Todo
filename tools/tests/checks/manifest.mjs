@@ -5,6 +5,10 @@ import { isFile, lineOf, parseAllowList, readText } from "../lib/source.mjs";
 const DUP_ALLOWLIST = "tools/tests/allow-dup-refs.txt";
 const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
 const GOOGLE_HOST = /^(?:\*\.)?(?:www\.|oauth2\.)?googleapis\.com$/;
+// Firefox only: identity.getRedirectURL() returns https://<hash>.extensions.allizom.org/
+// (sync.js:34), the OAuth return origin the Android tab flow observes. Kept as the single
+// non-Google exception so that "tabs" (all tab URLs) is not requested.
+const FIREFOX_OAUTH_HOST = /^\*\.extensions\.allizom\.org$/;
 
 function loadManifest(variant) {
   const rel = `${variant.dir}/manifest.json`;
@@ -130,7 +134,8 @@ export function register(suite) {
         const scheme = entry.indexOf("://");
         if (scheme === -1) continue;
         const host = entry.slice(scheme + 3).split("/")[0].split(":")[0];
-        if (!GOOGLE_HOST.test(host)) {
+        const allowed = GOOGLE_HOST.test(host) || (variant.id === "firefox" && FIREFOX_OAUTH_HOST.test(host));
+        if (!allowed) {
           problems.push(`${rel}:${line}: host permission "${entry}" is outside the Google API allow-list`);
         }
         if (!entry.startsWith("https://")) {
