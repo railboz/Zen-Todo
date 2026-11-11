@@ -487,9 +487,13 @@ Sync.markDirty = () => {
   clearTimeout(syncChain.timer);
   syncChain.timer = setTimeout(() => { syncChain.busy = syncChain.busy.then(doSync).catch(() => {}); }, 2500);
 };
-/* Ouverture de l'interface : récupérer ce qui a pu changer ailleurs (silencieux, sans erreur visible). */
-Sync.auto = () => {
+/* Ouverture de l'interface : récupérer ce qui a pu changer ailleurs, sans relancer le réseau
+   à chaque ouverture ni rouvrir une fenêtre Google quand la session est expirée. */
+Sync.auto = async () => {
   if (!Sync.configured()) return;
+  const { lastSync, syncState } = await api.storage.local.get({ lastSync: 0, syncState: null });
+  if (syncState && syncState.code === "reauth") return;   // reconnexion manuelle via « Synchroniser »
+  if (Date.now() - (Number(lastSync) || 0) < 60000) return;   // synchro récente : ne pas la refaire
   syncChain.busy = syncChain.busy.then(doSync).catch(() => {});
 };
 /* Diagnostic (console de l'arrière-plan) : Sync.debug() — compte les éléments local/distant, sans afficher les textes. */

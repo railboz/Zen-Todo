@@ -137,6 +137,8 @@ api.runtime.onMessage.addListener((m) => {
 async function gsyncTick() {
   if (!Sync.configured()) return;
   if (!(await Sync.account())) return;
+  const { syncState } = await api.storage.local.get({ syncState: null });
+  if (syncState && syncState.code === "reauth") return;   // évite une fenêtre Google cachée toutes les 15 min
   try { await Sync.syncNow(); } catch (e) {}
 }
 api.alarms.onAlarm.addListener((a) => {

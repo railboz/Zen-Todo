@@ -1160,7 +1160,7 @@ async function renderSyncUI() {
   const ok = Sync.available() && Sync.configured();
   $("sync-setup").hidden = ok;
   const acct = ok ? await Sync.account() : null;
-  const { syncState } = await api.storage.local.get({ syncState: null });
+  const { syncState, backup, lastSync } = await api.storage.local.get({ syncState: null, backup: null, lastSync: 0 });
   $("sync-signin").hidden = !(ok && !acct);
   $("sync-on").hidden = !(ok && acct);
 
@@ -1178,11 +1178,9 @@ async function renderSyncUI() {
       ind.setAttribute("aria-label", ind.title);
     }
   }
-  const { backup } = await api.storage.local.get({ backup: null });
   $("restore-backup").hidden = !(backup && Array.isArray(backup.tasks) && Array.isArray(backup.projects));
   if (!acct) return;
   $("sync-email").textContent = acct.email || t("syncTitle");
-  const { lastSync } = await api.storage.local.get({ lastSync: 0 });
   $("sync-last").textContent = lastSync ? t("syncLast", { t: new Date(lastSync).toLocaleString(locale(), { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) }) : "";
   // Dernière erreur : afficher aussi le détail renvoyé par Google (API désactivée, portée refusée…)
   // tant qu'une synchronisation n'a pas réussi.
@@ -1276,7 +1274,9 @@ api.storage.local.get({ tasks: [], lang: null, defaultPriority: "medium", badge:
   applyTextSize(s.textSize);
   $("new-priority").value = defaultPriority; renderPrioChips();
   renderSyncUI();
-  Sync.auto();
+  // Laisser le premier rendu se peindre avant la synchro réseau : l'ouverture reste fluide
+  // même si Google est lent ou si la session doit être renégociée.
+  requestAnimationFrame(() => setTimeout(() => Sync.auto(), 0));
   if (currentTab === "projects") $("new-project").focus(); else $("new-text").focus();
 });
 $("theme-toggle").addEventListener("click", () => { setTheme(THEME === "dark" ? "light" : "dark"); applyThemeUI(); api.storage.local.set({ theme: THEME }); touchSettings(); });
@@ -1285,8 +1285,15 @@ document.querySelectorAll(".textsize").forEach(b => b.addEventListener("click", 
   applyTextSize(b.dataset.size);
   api.storage.local.set({ textSize: b.dataset.size });   // préférence locale : ne part pas dans la synchro
 }));
+/* Regroupe les rendus déclenchés par une rafale de changements de stockage (sync, réglages). */
+let pendingRender = false;
+function scheduleRender() {
+  if (pendingRender) return;
+  pendingRender = true;
+  requestAnimationFrame(() => { pendingRender = false; render(); });
+}
 api.storage.onChanged.addListener((ch) => {
-  if (ch.filter) { filter = FILTERS.includes(ch.filter.newValue) ? ch.filter.newValue : "all"; render(); }
+  if (ch.filter) { filter = FILTERS.includes(ch.filter.newValue) ? ch.filter.newValue : "all"; scheduleRender(); }
   if (ch.badge) $("badge-toggle").checked = !!ch.badge.newValue;
   if (ch.del) { const d = ch.del.newValue; syncDel = (d && typeof d === "object") ? { t: (d.t && typeof d.t === "object") ? d.t : {}, p: (d.p && typeof d.p === "object") ? d.p : {} } : { t: {}, p: {} }; }
   if (ch.gAccount || ch.lastSync) renderSyncUI();
@@ -1303,7 +1310,7 @@ api.storage.onChanged.addListener((ch) => {
   }
   if (ch.tasks && JSON.stringify(ch.tasks.newValue) !== JSON.stringify(tasks)) {
     if (editingId) pendingTasks = ch.tasks.newValue;   // édition en cours : reconstruire la liste effacerait la saisie
-    else { tasks = normTasks(ch.tasks.newValue); render(); }
+    else { tasks = normTasks(ch.tasks.newValue); scheduleRender(); }
   }
   if (ch.lang) applyLang(isLang(ch.lang.newValue) ? ch.lang.newValue : defaultLang());   // null = langue automatique
   if (ch.theme && ch.theme.newValue) { setTheme(ch.theme.newValue); applyThemeUI(); }
@@ -1312,7 +1319,7 @@ api.storage.onChanged.addListener((ch) => {
   if (ch.sortBy && SORTS.includes(ch.sortBy.newValue)) {
     sortBy = ch.sortBy.newValue;
     $("sort-select").value = sortBy; $("sort-select-settings").value = sortBy;
-    render();
+    scheduleRender();
   }
   if (ch.sound) { soundOn = ch.sound.newValue !== false; $("sound-toggle").checked = soundOn; }
 });

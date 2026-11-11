@@ -35,7 +35,10 @@ Correctif du 11/11/2026 :
 - `login_hint` sur le compte déjà autorisé, pour gérer plusieurs comptes Google ;
 - message d'erreur renvoyé par Google conservé et affiché dans l'interface ;
 - reconnexion interactive directe quand le jeton expire ;
-- l'erreur reste visible jusqu'à la prochaine synchronisation réussie.
+- l'erreur reste visible jusqu'à la prochaine synchronisation réussie ;
+- ouverture plus fluide : la synchro réseau est différée après le premier rendu, les rendus
+  déclenchés par une rafale de changements sont regroupés, et aucune fenêtre Google cachée
+  n'est ouverte quand la session est expirée.
 
 ## Licence
 
