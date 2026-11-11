@@ -416,17 +416,22 @@ function taskNode(task, i, canReorder) {
 }
 
 /* ---------- délégation des événements de la liste ---------- */
-/* 6 écouteurs sur #list au lieu de 11 par tâche (1100 créations par rendu à N=100). Chaque
+/* 7 écouteurs sur #list au lieu de 11 par tâche (1100 créations par rendu à N=100). Chaque
    gestionnaire retrouve la ligne par closest("li.task") au moment de l'événement. */
 const reorderable = new WeakSet();   // lignes construites avec canReorder (aucun attribut DOM en plus)
 const taskById = (id) => tasks.find(x => x.id === id) || null;
 const inList = (target) => (target && target.closest) ? target.closest("li.task") : null;
+// Ligne armée par un mousedown sur la poignée. Tout relâchement doit la désarmer, y compris hors
+// de la ligne ou hors du popup : sinon `draggable` reste vrai et la ligne ne peut plus être
+// sélectionnée au texte (un simple glisser la réordonnerait et le pousserait vers Drive).
+let armedRow = null;
+function disarm() { if (armedRow) { armedRow.draggable = false; armedRow = null; } }
 
 list.addEventListener("click", (e) => {
   const li = inList(e.target);
   if (!li) return;
   // Clic sur la poignée sans glisser : la ligne ne doit pas rester déplaçable (ex-écouteur « mouseup »).
-  if (e.target.closest(".handle")) { li.draggable = false; return; }
+  if (e.target.closest(".handle")) { li.draggable = false; disarm(); return; }
   const btn = e.target.closest("button");
   if (!btn) return;
   const id = li.dataset.id;
@@ -442,10 +447,16 @@ list.addEventListener("click", (e) => {
   }
 });
 list.addEventListener("mousedown", (e) => {
+  if (e.button !== 0) return;   // clic droit/milieu : ne pas armer la ligne
   if (!e.target.closest || !e.target.closest(".handle")) return;
   const li = inList(e.target);
-  if (li && reorderable.has(li)) li.draggable = true;
+  if (li && reorderable.has(li)) { armedRow = li; li.draggable = true; }
 });
+// Relâchement : sur la liste (l'ancien écouteur par poignée) et au niveau du document, car un
+// relâchement hors de la ligne n'atteint jamais #list.
+list.addEventListener("mouseup", disarm);
+document.addEventListener("mouseup", disarm, true);
+document.addEventListener("pointerup", disarm, true);
 list.addEventListener("dragstart", (e) => {
   const li = inList(e.target);
   if (!li || !reorderable.has(li)) return;
@@ -456,7 +467,7 @@ list.addEventListener("dragstart", (e) => {
 list.addEventListener("dragend", (e) => {
   const li = inList(e.target);
   if (!li || !reorderable.has(li)) return;
-  li.draggable = false; dragId = null; clearDrop(); li.classList.remove("dragging");
+  li.draggable = false; disarm(); dragId = null; clearDrop(); li.classList.remove("dragging");
 });
 list.addEventListener("dragover", (e) => {
   const li = inList(e.target);
@@ -482,7 +493,7 @@ list.addEventListener("drop", (e) => {
   persist(); render();
   // Le rendu a remplacé la ligne source : le dragend du navigateur la visera détachée et
   // n'atteindra donc plus #list. On remet l'état de glisser à zéro ici (comme le faisait dragend).
-  dragId = null;
+  dragId = null; disarm();
 });
 
 function completeToggle(task) {
@@ -1264,14 +1275,16 @@ let restoreArmed = false;
 function resetRestore() { restoreArmed = false; const b = $("restore-backup"); b.classList.remove("armed"); b.textContent = t("restoreBackup"); }
 // Clés du bloc synchro lues en une fois (compte Google compris) : un seul aller-retour au lieu de
 // deux appels séquentiels (Sync.account() puis le get des trois valeurs).
-const SYNC_READ_KEYS = { gAccount: null, syncState: null, backup: null, lastSync: 0 };
+// `backup` n'en fait pas partie : c'est une copie complète des tâches et des projets, inutile avant
+// la première peinture, et lue séparément par refreshRestore().
+const SYNC_READ_KEYS = { gAccount: null, syncState: null, lastSync: 0 };
 async function renderSyncUI(snapshot) {
   const ok = Sync.available() && Sync.configured();
   $("sync-setup").hidden = ok;
   // `snapshot` : valeurs déjà lues au démarrage, pour ne rien relire sur ce chemin.
   const s = snapshot || await api.storage.local.get(SYNC_READ_KEYS);
   const acct = (ok && s.gAccount && typeof s.gAccount === "object") ? s.gAccount : null;   // comme Sync.account()
-  const syncState = s.syncState, backup = s.backup, lastSync = s.lastSync;
+  const syncState = s.syncState, lastSync = s.lastSync;
   $("sync-signin").hidden = !(ok && !acct);
   $("sync-on").hidden = !(ok && acct);
 
@@ -1289,13 +1302,20 @@ async function renderSyncUI(snapshot) {
       ind.setAttribute("aria-label", ind.title);
     }
   }
-  $("restore-backup").hidden = !(backup && Array.isArray(backup.tasks) && Array.isArray(backup.projects));
+  refreshRestore().catch(() => {});   // `backup` (copie lourde) est lu hors de la lecture de démarrage
   if (!acct) return;
   $("sync-email").textContent = acct.email || t("syncTitle");
   $("sync-last").textContent = lastSync ? t("syncLast", { t: new Date(lastSync).toLocaleString(locale(), { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) }) : "";
   // Dernière erreur : afficher aussi le détail renvoyé par Google (API désactivée, portée refusée…)
   // tant qu'une synchronisation n'a pas réussi.
   if (syncState && syncState.code !== "ok") syncMsg(syncStateText(syncState), true);
+}
+/* Le bouton « restaurer » ne dépend que de l'existence de `backup`. Cette copie complète des tâches
+   et des projets est lue ici (renderSyncUI n'est appelé qu'après la première peinture, et les
+   rafraîchissements suivants sont groupés par scheduleSyncUI) : elle ne pèse pas sur l'ouverture. */
+async function refreshRestore() {
+  const { backup } = await api.storage.local.get({ backup: null });
+  $("restore-backup").hidden = !(backup && Array.isArray(backup.tasks) && Array.isArray(backup.projects));
 }
 $("sync-signin").addEventListener("click", () => { syncMsg(t("syncOpening")); api.runtime.sendMessage({ type: "zt:signin" }).catch(() => {}); });
 $("sync-out").addEventListener("click", () => { syncMsg(""); api.runtime.sendMessage({ type: "zt:signout" }).catch(() => {}); });
@@ -1486,7 +1506,12 @@ api.storage.onChanged.addListener((ch) => {
     if (editingId) pendingTasks = ch.tasks.newValue;   // édition en cours : reconstruire la liste effacerait la saisie
     else { tasks = normTasks(ch.tasks.newValue); scheduleRender(); }
   }
-  if (ch.lang) applyLang(isLang(ch.lang.newValue) ? ch.lang.newValue : defaultLang());   // null = langue automatique
+  // La synchro réécrit `lang` à chaque passage (sync.js) : ne reconstruire que si la langue change,
+  // sinon chaque synchro relancerait un rendu complet + applyStaticI18n + les 3 commands.getAll().
+  if (ch.lang) {
+    const l = isLang(ch.lang.newValue) ? ch.lang.newValue : defaultLang();   // null = langue automatique
+    if (l !== LANG) applyLang(l);
+  }
   if (ch.theme && ch.theme.newValue) { setTheme(ch.theme.newValue); applyThemeUI(); }
   if (ch.textSize) applyTextSize(ch.textSize.newValue);
   if (ch.defaultPriority && PRIOS.includes(ch.defaultPriority.newValue)) { defaultPriority = ch.defaultPriority.newValue; $("new-priority").value = defaultPriority; renderPrioChips(); }
