@@ -1437,23 +1437,63 @@ function scheduleRender() {
   pendingRender = true;
   requestAnimationFrame(() => { pendingRender = false; render(); });
 }
+/* Regroupe les rafraîchissements du bloc synchro : gAccount/lastSync/syncState arrivent souvent
+   dans la même rafale, un seul rendu suffit (comme scheduleRender). */
+let pendingSyncUI = false;
+function scheduleSyncUI() {
+  if (pendingSyncUI) return;
+  pendingSyncUI = true;
+  requestAnimationFrame(() => { pendingSyncUI = false; renderSyncUI(); });
+}
+/* Comparaison en UNE passe avec l'état affiché, à la place de JSON.stringify des deux côtés :
+   on ne compare que les champs lus par le rendu, donc « égal » = DOM identique. Aucune
+   allocation de chaîne, sortie anticipée à la première différence. */
+function sameTasks(a, b) {
+  if (!Array.isArray(a) || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i], y = b[i];
+    if (!x || !y) return false;
+    if (x.id !== y.id || x.text !== y.text || x.done !== y.done || x.due !== y.due
+      || x.priority !== y.priority || x.note !== y.note || x.repeat !== y.repeat
+      || x.time !== y.time || x.remind !== y.remind || x.repeatDay !== y.repeatDay
+      || x.next !== y.next || (x.updatedAt || 0) !== (y.updatedAt || 0)) return false;
+  }
+  return true;
+}
+function sameProjects(a, b) {
+  if (!Array.isArray(a) || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i], y = b[i];
+    if (!x || !y) return false;
+    if (x.id !== y.id || x.name !== y.name || x.color !== y.color || x.due !== y.due
+      || x.time !== y.time || x.remind !== y.remind || !!x.open !== !!y.open
+      || (x.updatedAt || 0) !== (y.updatedAt || 0)) return false;
+    const sx = Array.isArray(x.subs) ? x.subs : [], sy = Array.isArray(y.subs) ? y.subs : [];
+    if (sx.length !== sy.length) return false;
+    for (let j = 0; j < sx.length; j++) {
+      const p = sx[j], q = sy[j];
+      if (!p || !q || p.id !== q.id || p.text !== q.text || !!p.done !== !!q.done) return false;
+    }
+  }
+  return true;
+}
 api.storage.onChanged.addListener((ch) => {
   if (ch.filter) { filter = FILTERS.includes(ch.filter.newValue) ? ch.filter.newValue : "all"; scheduleRender(); }
   if (ch.badge) $("badge-toggle").checked = !!ch.badge.newValue;
   if (ch.del) syncDel = readDel(ch.del.newValue);
-  if (ch.gAccount || ch.lastSync) renderSyncUI();
+  if (ch.gAccount || ch.lastSync) scheduleSyncUI();
   if (ch.syncState) {
     const s = ch.syncState.newValue;
     if (s && typeof s.code === "string" && Date.now() - (Number(s.time) || 0) < 120000) {
       syncMsg(syncStateText(s), s.code !== "ok");
     }
-    renderSyncUI();
+    scheduleSyncUI();
   }
-  if (ch.projects && JSON.stringify(ch.projects.newValue) !== JSON.stringify(projects)) {
+  if (ch.projects && !sameProjects(ch.projects.newValue, projects)) {
     if (editingProject || editingSub) pendingProjects = ch.projects.newValue;   // édition en cours : on attend sa fin
     else { projects = normProjects(ch.projects.newValue); if (currentTab === "projects") renderProjectsKeepInput(); }
   }
-  if (ch.tasks && JSON.stringify(ch.tasks.newValue) !== JSON.stringify(tasks)) {
+  if (ch.tasks && !sameTasks(ch.tasks.newValue, tasks)) {
     if (editingId) pendingTasks = ch.tasks.newValue;   // édition en cours : reconstruire la liste effacerait la saisie
     else { tasks = normTasks(ch.tasks.newValue); scheduleRender(); }
   }
