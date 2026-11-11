@@ -47,5 +47,8 @@
       },
       "description": "Zen Todo (panneau lateral)"
     }
+  },
+  "content_security_policy": {
+    "extension_pages": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src https://www.googleapis.com https://oauth2.googleapis.com; object-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'"
   }
 }
