@@ -93,8 +93,8 @@ async function updateBadge(tasks, enabled, projects = [], force = false) {
 
 async function sync(force = false) {
   const s = await api.storage.local.get({ tasks: [], projects: [], notified: {}, lang: null, badge: true, bgSig: null });
-  s.tasks = uniqueIds((Array.isArray(s.tasks) ? s.tasks : []).map(sanitizeTask).filter(Boolean), "x");
-  s.projects = uniqueIds((Array.isArray(s.projects) ? s.projects : []).map(sanitizeProject).filter(Boolean), "p");
+  s.tasks = parseList(s.tasks, sanitizeTask, "x");
+  s.projects = parseList(s.projects, sanitizeProject, "p");
   if (!s.notified || typeof s.notified !== "object") s.notified = {};
   setLang(s.lang || defaultLang());
   const now = Date.now();

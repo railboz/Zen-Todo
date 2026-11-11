@@ -265,8 +265,8 @@ function renderFilters() {
 }
 
 /* ---------- robustesse : données incomplètes ou modifiées à la main ---------- */
-function normTasks(a) { return uniqueIds((Array.isArray(a) ? a : []).slice(0, 5000).map(sanitizeTask).filter(Boolean), "x"); }
-function normProjects(a) { return uniqueIds((Array.isArray(a) ? a : []).slice(0, 500).map(sanitizeProject).filter(Boolean), "p"); }
+function normTasks(a) { return parseList(a, sanitizeTask, "x", 5000); }
+function normProjects(a) { return parseList(a, sanitizeProject, "p", 500); }
 
 /* ---------- travail différé d'après rendu ---------- */
 /* Une seule paire de requestAnimationFrame par rendu : plus de lecture de offsetWidth au milieu

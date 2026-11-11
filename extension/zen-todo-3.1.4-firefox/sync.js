@@ -343,8 +343,8 @@ function normSet(s) {
 async function buildLocal() {
   const s = await api.storage.local.get({ tasks: [], projects: [], del: null, setTs: 0, lang: null, badge: true, sound: true, sortBy: "manual", defaultPriority: "medium", filter: "all", theme: "dark" });
   return {
-    tasks: uniqueIds((Array.isArray(s.tasks) ? s.tasks : []).slice(0, 5000).map(sanitizeTask).filter(Boolean), "x"),
-    projects: uniqueIds((Array.isArray(s.projects) ? s.projects : []).slice(0, 500).map(sanitizeProject).filter(Boolean), "p"),
+    tasks: parseList(s.tasks, sanitizeTask, "x", 5000),
+    projects: parseList(s.projects, sanitizeProject, "p", 500),
     del: normDel(s.del),
     set: normSet({ lang: s.lang, badge: s.badge, sound: s.sound, sortBy: s.sortBy, defaultPriority: s.defaultPriority, filter: s.filter, theme: s.theme, ts: Number(s.setTs) || 0 })
   };
@@ -404,8 +404,8 @@ function mergeItems(localList, remoteList, tombs, cap) {
 }
 function mergeDocs(local, remote) {
   const del = mergeDel(local.del, remote ? normDel(remote.del) : { t: {}, p: {} });
-  const rTasks = remote && Array.isArray(remote.tasks) ? uniqueIds(remote.tasks.slice(0, 5000).map(sanitizeTask).filter(Boolean), "x") : [];
-  const rProjects = remote && Array.isArray(remote.projects) ? uniqueIds(remote.projects.slice(0, 500).map(sanitizeProject).filter(Boolean), "p") : [];
+  const rTasks = parseList(remote && remote.tasks, sanitizeTask, "x", 5000);
+  const rProjects = parseList(remote && remote.projects, sanitizeProject, "p", 500);
   const rSet = remote ? normSet(remote.set) : null;
   return {
     tasks: mergeItems(local.tasks, rTasks, del.t, 5000),

@@ -70,6 +70,13 @@ function uniqueIds(list, prefix) {
   return out;
 }
 
+// Liste brute (stockage local ou document distant) -> éléments validés, identifiants uniques.
+// `cap` absent : aucune troncature (l'arrière-plan relit une liste déjà bornée par l'interface).
+function parseList(raw, sanitize, prefix, cap) {
+  const list = Array.isArray(raw) ? raw : [];
+  return uniqueIds((cap ? list.slice(0, cap) : list).map(sanitize).filter(Boolean), prefix);
+}
+
 // Ne garde que les champs connus, avec le bon type : un stockage modifié ou corrompu ne peut rien injecter.
 function sanitizeTask(x) {
   if (!x || typeof x !== "object" || typeof x.text !== "string") return null;
