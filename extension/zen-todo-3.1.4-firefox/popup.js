@@ -102,6 +102,15 @@ function buildSelect(sel, values, prefix) {
   sel.replaceChildren(...values.map(v => new Option(t(prefix + v), v)));
   if (values.includes(cur)) sel.value = cur;
 }
+// Remplissage mémoïsé (langue + options) : une liste de tâches ne reconstruit plus les <select>
+// de la vue Options à chaque rendu. Mêmes options pour la même clé, donc DOM identique.
+const selectKeys = new WeakMap();
+function buildSelectCached(sel, values, prefix) {
+  const key = LANG + "|" + prefix + "|" + values.join(",");
+  if (selectKeys.get(sel) === key) return;
+  selectKeys.set(sel, key);
+  buildSelect(sel, values, prefix);
+}
 function sortByCmp(a, b) {
   if (sortBy === "date") return (a.due || "9999-12-31").localeCompare(b.due || "9999-12-31");
   if (sortBy === "priority") return (PRIOS.indexOf(b.priority) - PRIOS.indexOf(a.priority)) || 0;
@@ -229,11 +238,22 @@ const FILTER_TESTS = {
   today: (x) => !x.done && !!x.due && x.due <= todayIso()   // aujourd'hui + en retard
 };
 function matchesFilter(x) { return FILTER_TESTS[filter](x); }
+let filtersKey = null;
 function renderFilters() {
   const box = $("filters");
   box.hidden = tasks.length === 0;
-  const counts = {};
-  FILTERS.forEach(f => { counts[f] = tasks.filter(FILTER_TESTS[f]).length; });
+  // Un seul passage sur les tâches (au lieu d'un filter par pastille) ; les compteurs suffisent
+  // comme clé : à clé égale, les pastilles seraient identiques.
+  const counts = { all: 0, todo: 0, done: 0, today: 0 };
+  const today = todayIso();
+  for (const x of tasks) {
+    counts.all++;
+    if (x.done) counts.done++;
+    else { counts.todo++; if (x.due && x.due <= today) counts.today++; }
+  }
+  const key = LANG + "|" + filter + "|" + counts.all + "|" + counts.todo + "|" + counts.done + "|" + counts.today;
+  if (key === filtersKey) return;
+  filtersKey = key;
   box.replaceChildren(...FILTERS.map(f => {
     const b = el("button", "fchip"); b.type = "button"; b.setAttribute("aria-pressed", String(f === filter));
     const l = el("span"); l.textContent = t("filter_" + f);
@@ -248,6 +268,37 @@ function renderFilters() {
 function normTasks(a) { return uniqueIds((Array.isArray(a) ? a : []).slice(0, 5000).map(sanitizeTask).filter(Boolean), "x"); }
 function normProjects(a) { return uniqueIds((Array.isArray(a) ? a : []).slice(0, 500).map(sanitizeProject).filter(Boolean), "p"); }
 
+/* ---------- travail différé d'après rendu ---------- */
+/* Une seule paire de requestAnimationFrame par rendu : plus de lecture de offsetWidth au milieu
+   de la construction de la liste (elle forçait une mise en page synchrone) et plus d'une paire
+   de rAF par projet. Les travaux s'exécutent dans l'ordre où ils ont été demandés. */
+const afterPaintJobs = [];
+let afterPaintFrame = 0;
+function afterPaint(fn) {
+  afterPaintJobs.push(fn);
+  if (afterPaintFrame) return;
+  afterPaintFrame = requestAnimationFrame(() => {
+    // Frame suivante : le navigateur a calculé les styles de départ (sans .bump, largeur = lastPct)
+    // avant qu'on ne les change — l'animation et la transition redémarrent comme avant.
+    afterPaintFrame = requestAnimationFrame(() => {
+      afterPaintFrame = 0;
+      for (const job of afterPaintJobs.splice(0)) { try { job(); } catch (e) {} }
+    });
+  });
+}
+// Barres de progression des projets : largeur finale calculée dans le même lot différé.
+const barJobs = [];
+let barFlushQueued = false;
+function queueBarFill(fill, pct) {
+  barJobs.push([fill, pct]);
+  if (barFlushQueued) return;
+  barFlushQueued = true;
+  afterPaint(() => {
+    barFlushQueued = false;
+    for (const [f, v] of barJobs.splice(0)) f.style.width = v + "%";
+  });
+}
+
 function render() {
   if (!editingId) editNodeCache = null;   // édition terminée : ne pas garder un formulaire fantôme
   if (!editingId && pendingTasks) { tasks = normTasks(pendingTasks); pendingTasks = null; }
@@ -255,13 +306,16 @@ function render() {
   const done = tasks.filter(x => x.done).length;
   const leftNow = tasks.length - done;
   $("left").textContent = leftNow;
-  if (lastLeft !== null && lastLeft !== leftNow) { $("left").classList.remove("bump"); void $("left").offsetWidth; $("left").classList.add("bump"); }
+  // Redémarrage de l'animation « bump » sans lire offsetWidth (aucune mise en page forcée) :
+  // la classe est retirée maintenant et remise après la frame de peinture.
+  if (lastLeft !== null && lastLeft !== leftNow) { $("left").classList.remove("bump"); afterPaint(() => $("left").classList.add("bump")); }
   lastLeft = leftNow;
   $("subtitle").textContent = tasks.length ? t("tasksCount", { n: tasks.length, d: done }) : t("emptySub");
   $("clear").disabled = done === 0;
   $("clear").style.opacity = done === 0 ? .5 : 1;
 
-  buildSelect($("new-priority"), PRIOS, "");
+  // Vue Options (masquée pendant un rendu de liste) : reconstruite seulement si ses entrées changent.
+  buildSelectCached($("new-priority"), PRIOS, "");
   renderPrioChips();
   renderFilters();
 
@@ -272,14 +326,14 @@ function render() {
   // ne correspond plus : sinon son formulaire disparaîtrait au milieu de la saisie.
   if (editingId) {
     const ed = tasks.find(x => x.id === editingId);
-    if (ed && !shown.includes(ed)) shown = [ed, ...shown];
+    if (ed && !new Set(shown.map(x => x.id)).has(ed.id)) shown = [ed, ...shown];
   }
   const sorting = !q && sortBy !== "manual";
   if (sorting) shown = shown.slice().sort(sortByCmp);
 
-  buildSelect($("sort-select"), SORTS, "sort_");
+  buildSelectCached($("sort-select"), SORTS, "sort_");
   $("sort-select").value = sortBy;
-  buildSelect($("sort-select-settings"), SORTS, "sort_");
+  buildSelectCached($("sort-select-settings"), SORTS, "sort_");
   $("sort-select-settings").value = sortBy;
 
   $("search-box").hidden = tasks.length === 0;
@@ -290,7 +344,10 @@ function render() {
   list.replaceChildren();
 
   if (q || filtered || sorting) {
-    shown.forEach(task => list.appendChild(taskNode(task, tasks.indexOf(task), false)));
+    // N² → N : index construit une fois au lieu d'un tasks.indexOf() par tâche affichée.
+    const indexById = new Map();
+    tasks.forEach((x, i) => indexById.set(x.id, i));
+    shown.forEach(task => list.appendChild(taskNode(task, indexById.get(task.id), false)));
   } else {
     const late = [], normal = [];
     tasks.forEach((task, idx) => { (isLate(task) ? late : normal).push([task, idx]); });
@@ -315,35 +372,9 @@ function taskNode(task, i, canReorder) {
   handle.setAttribute("aria-hidden", "true");
   if (!canReorder) handle.style.visibility = "hidden";
   li.appendChild(handle);
-  if (canReorder) {
-    handle.addEventListener("mousedown", () => (li.draggable = true));
-    handle.addEventListener("mouseup", () => (li.draggable = false));   // clic sans glisser : ne pas laisser toute la ligne déplaçable
-    li.addEventListener("dragstart", (e) => {
-      dragId = task.id; li.classList.add("dragging");
-      e.dataTransfer.effectAllowed = "move";
-      e.dataTransfer.setData("text/plain", task.id);
-    });
-    li.addEventListener("dragend", () => { li.draggable = false; dragId = null; clearDrop(); li.classList.remove("dragging"); });
-    li.addEventListener("dragover", (e) => {
-      if (!dragId || dragId === task.id) return;
-      e.preventDefault();
-      const r = li.getBoundingClientRect();
-      clearDrop();
-      li.classList.add(e.clientY < r.top + r.height / 2 ? "drop-before" : "drop-after");
-    });
-    li.addEventListener("drop", (e) => {
-      e.preventDefault();
-      if (!dragId || dragId === task.id) return;
-      const before = li.classList.contains("drop-before");
-      const from = tasks.findIndex(x => x.id === dragId);
-      if (from < 0) return;   // la tâche a disparu entre-temps (synchro) : splice(-1) aurait supprimé la dernière
-      const [moved] = tasks.splice(from, 1);
-      let to = tasks.findIndex(x => x.id === task.id);
-      if (!before) to++;
-      tasks.splice(to, 0, moved);
-      persist(); render();
-    });
-  }
+  // Délégation : un seul jeu d'écouteurs sur #list (voir plus bas). `reorderable` tient le rôle
+  // qu'avait la présence des écouteurs par ligne — sans ajouter d'attribut au DOM.
+  if (canReorder) reorderable.add(li);
 
   if (editingId === task.id) {
     if (!editNodeCache || editNodeCache.id !== task.id) editNodeCache = { id: task.id, node: editNode(task) };
@@ -355,7 +386,6 @@ function taskNode(task, i, canReorder) {
   check.type = "button";
   check.title = task.done ? t("markUndone") : t("markDone");
   check.setAttribute("aria-label", check.title);
-  check.addEventListener("click", () => completeToggle(task));
   li.appendChild(check);
 
   const body = el("div", "body");
@@ -367,9 +397,9 @@ function taskNode(task, i, canReorder) {
   if (task.note && task.note.trim()) { const nd = el("div", "note"); const ni = el("span", "ico", SVG.note); const nt = el("span"); nt.textContent = task.note; nd.append(ni, nt); body.append(nd); }
 
   const bottom = el("div", "bottom");
-  const up = mini(SVG.up, t("moveUp"), () => move(i, -1)); up.disabled = !canReorder || neighborIndex(i, -1) < 0;
-  const down = mini(SVG.down, t("moveDown"), () => move(i, 1)); down.disabled = !canReorder || neighborIndex(i, 1) < 0;
-  const edit = mini(SVG.edit, t("edit"), () => { editingId = task.id; render(); });
+  const up = mini(SVG.up, t("moveUp")); up.disabled = !canReorder || neighborIndex(i, -1) < 0;
+  const down = mini(SVG.down, t("moveDown")); down.disabled = !canReorder || neighborIndex(i, 1) < 0;
+  const edit = mini(SVG.edit, t("edit"));
   edit.classList.add("edit-btn");
   bottom.append(up, down, edit);
 
@@ -391,10 +421,79 @@ function taskNode(task, i, canReorder) {
 
   const del = el("button", "del", SVG.trash);
   del.type = "button"; del.title = t("del"); del.setAttribute("aria-label", t("del"));
-  del.addEventListener("click", () => removeTasks(new Set([task.id])));
   li.appendChild(del);
   return li;
 }
+
+/* ---------- délégation des événements de la liste ---------- */
+/* 6 écouteurs sur #list au lieu de 11 par tâche (1100 créations par rendu à N=100). Chaque
+   gestionnaire retrouve la ligne par closest("li.task") au moment de l'événement. */
+const reorderable = new WeakSet();   // lignes construites avec canReorder (aucun attribut DOM en plus)
+const taskById = (id) => tasks.find(x => x.id === id) || null;
+const inList = (target) => (target && target.closest) ? target.closest("li.task") : null;
+
+list.addEventListener("click", (e) => {
+  const li = inList(e.target);
+  if (!li) return;
+  // Clic sur la poignée sans glisser : la ligne ne doit pas rester déplaçable (ex-écouteur « mouseup »).
+  if (e.target.closest(".handle")) { li.draggable = false; return; }
+  const btn = e.target.closest("button");
+  if (!btn) return;
+  const id = li.dataset.id;
+  if (btn.classList.contains("check")) { const task = taskById(id); if (task) completeToggle(task); return; }
+  if (btn.classList.contains("del")) { removeTasks(new Set([id])); return; }
+  if (btn.classList.contains("edit-btn")) { editingId = id; render(); return; }
+  if (btn.classList.contains("mini")) {
+    const i = tasks.findIndex(x => x.id === id);
+    if (i < 0) return;
+    // `.bottom` contient [monter, descendre, modifier, échéance] : les deux flèches n'ont pas de
+    // classe propre (le DOM ne doit pas changer), c'est leur position qui les distingue.
+    move(i, btn.parentElement && btn.parentElement.firstElementChild === btn ? -1 : 1);
+  }
+});
+list.addEventListener("mousedown", (e) => {
+  if (!e.target.closest || !e.target.closest(".handle")) return;
+  const li = inList(e.target);
+  if (li && reorderable.has(li)) li.draggable = true;
+});
+list.addEventListener("dragstart", (e) => {
+  const li = inList(e.target);
+  if (!li || !reorderable.has(li)) return;
+  dragId = li.dataset.id; li.classList.add("dragging");
+  e.dataTransfer.effectAllowed = "move";
+  e.dataTransfer.setData("text/plain", dragId);
+});
+list.addEventListener("dragend", (e) => {
+  const li = inList(e.target);
+  if (!li || !reorderable.has(li)) return;
+  li.draggable = false; dragId = null; clearDrop(); li.classList.remove("dragging");
+});
+list.addEventListener("dragover", (e) => {
+  const li = inList(e.target);
+  if (!li || !dragId || dragId === li.dataset.id) return;
+  e.preventDefault();
+  const r = li.getBoundingClientRect();
+  clearDrop();
+  li.classList.add(e.clientY < r.top + r.height / 2 ? "drop-before" : "drop-after");
+});
+list.addEventListener("drop", (e) => {
+  const li = inList(e.target);
+  e.preventDefault();
+  if (!li) return;
+  const targetId = li.dataset.id;
+  if (!dragId || dragId === targetId) return;
+  const before = li.classList.contains("drop-before");
+  const from = tasks.findIndex(x => x.id === dragId);
+  if (from < 0) return;   // la tâche a disparu entre-temps (synchro) : splice(-1) aurait supprimé la dernière
+  const [moved] = tasks.splice(from, 1);
+  let to = tasks.findIndex(x => x.id === targetId);
+  if (!before) to++;
+  tasks.splice(to, 0, moved);
+  persist(); render();
+  // Le rendu a remplacé la ligne source : le dragend du navigateur la visera détachée et
+  // n'atteindra donc plus #list. On remet l'état de glisser à zéro ici (comme le faisait dragend).
+  dragId = null;
+});
 
 function completeToggle(task) {
   if (completing.has(task.id)) return;
@@ -455,10 +554,12 @@ function focusSubButton(pid, sid) {
   try { n.focus({ preventScroll: true }); } catch (e) { try { n.focus(); } catch (e2) {} }
 }
 
+// `fn` facultatif : les boutons de la liste de tâches sont gérés par délégation (un seul
+// écouteur sur #list), ceux des projets et sous-tâches gardent le leur.
 function mini(svg, title, fn) {
   const b = el("button", "mini", svg);
   b.type = "button"; b.title = title; b.setAttribute("aria-label", title);
-  b.addEventListener("click", fn);
+  if (typeof fn === "function") b.addEventListener("click", fn);
   return b;
 }
 
@@ -590,8 +691,8 @@ $("note-toggle").addEventListener("click", () => {
 /* ---------- recherche ---------- */
 $("search").addEventListener("input", (e) => {
   query = e.target.value;
-  $("search-clear").hidden = query === "";
-  render();
+  $("search-clear").hidden = query === "";   // retour visuel immédiat : le champ est natif
+  scheduleRender();   // un rendu coalescé par frame au lieu d'une reconstruction par frappe
 });
 $("search").addEventListener("keydown", (e) => { if (e.key === "Escape" && query) { e.stopPropagation(); clearSearch(); } });
 $("search-clear").addEventListener("click", () => { clearSearch(); $("search").focus(); });
@@ -713,7 +814,7 @@ function projectNode(p) {
   track.appendChild(fill);
   const pctEl = el("span", "p-pct"); pctEl.textContent = complete ? "✓ " + t("projectDone") : pct + "%";
   barRow.append(track, pctEl);
-  requestAnimationFrame(() => requestAnimationFrame(() => { fill.style.width = pct + "%"; }));
+  queueBarFill(fill, pct);   // largeur finale posée dans le lot différé du rendu (une seule paire de rAF)
   lastPct[p.id] = pct;
 
   li.append(head, barRow);
@@ -1019,8 +1120,12 @@ document.querySelectorAll(".lang[data-lang]").forEach(b => b.addEventListener("c
   applyLang(b.dataset.lang);
 }));
 /* priorité par défaut : 3 pastilles colorées */
+let prioChipsKey = null;
 function renderPrioChips() {
   const box = $("prio-chips");
+  const key = LANG + "|" + defaultPriority;
+  if (key === prioChipsKey) return;   // même langue et même défaut : DOM identique, rien à refaire
+  prioChipsKey = key;
   box.replaceChildren(...PRIOS.map(p => {
     const b = el("button", "chip chip-" + p); b.type = "button"; b.setAttribute("role", "radio");
     b.setAttribute("aria-pressed", String(p === defaultPriority)); b.setAttribute("aria-checked", String(p === defaultPriority));
