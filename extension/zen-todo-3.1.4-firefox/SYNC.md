@@ -53,6 +53,10 @@ puis tapez `browser.identity.getRedirectURL()` dans la console.
 ## Fonctionnement
 - Synchronisation ~2,5 s après chaque modification (même popup fermé), à l'ouverture du panneau,
   toutes les 15 min en arrière-plan, et via le bouton « Synchroniser ».
+- Une même modification déclenche deux planifications (popup + arrière-plan) : le second cycle, s'il démarre
+  moins de 2 s après un cycle réussi, est ignoré (aucun effet visible, deux fois moins d'appels réseau).
+- Le fichier Drive est retrouvé une seule fois : son identifiant est mémorisé (lié au compte Google) et
+  revalidé automatiquement (nouvelle recherche si le fichier répond 404/403, cache effacé à la déconnexion).
 - Fusion par élément : chaque tâche/projet porte son horodatage, le plus récent gagne ;
   une suppression l'emporte si elle est plus récente que la dernière modification (pierres tombales gardées 90 jours).
 - Les réglages (langue, thème, tri, priorité par défaut…) sont synchronisés en bloc : le plus récent gagne.
@@ -66,6 +70,8 @@ puis tapez `browser.identity.getRedirectURL()` dans la console.
 - Pour révoquer l'accès : https://myaccount.google.com/permissions
 - Outils de diagnostic (console de l'arrière-plan via about:debugging → Inspecter) :
   `Sync.debug()` (état local/distant, sans afficher vos textes) et `Sync.probe()` (test d'écriture Drive).
+  Ils sont **désactivés dans les versions publiées** (constante `DEBUG = false` en tête de `sync.js`) et ne
+  font rien ; pour un débogage local, passez `DEBUG` à `true` dans votre copie du dossier source.
 
 ## Passer la synchronisation en « production » (plus un test)
 1. console.cloud.google.com → projet Zen Todo → **Google Auth Platform** → onglet **Audience**.

@@ -14,6 +14,10 @@ const SYNC_TOMBSTONE_DAYS = 90;                       // les suppressions sont m
 const SYNC_FILTERS = ["all", "todo", "done", "today"];
 const SYNC_SORTS = ["manual", "date", "priority", "created"];
 
+const DEBUG = false;                    // diagnostics console (Sync.debug / Sync.probe) : coupés dans les paquets publiés
+const DUP_WINDOW = 2000;                // cycle lancé moins de 2 s après un cycle réussi = doublon ignoré
+const RETRY_BACKOFF = 60000;            // après un échec, pas de nouvelle tentative automatique pendant 60 s
+
 const Sync = {};
 const syncChain = { busy: Promise.resolve(), timer: null };   // file d'attente : une synchro à la fois
 
@@ -177,6 +181,13 @@ async function getToken(force) {
   if (!force && gToken && typeof gToken.token === "string" && Number(gToken.expiresAt) - 60000 > Date.now()) return gToken.token;
   const res = await authFlow("none");   // jeton expiré : renégociation silencieuse, sans fenêtre
   if (!res) return null;
+  // Renégociation silencieuse (prompt=none) : Google répond avec le compte par défaut du navigateur, qui
+  // n'est pas forcément celui qui a autorisé l'extension (login_hint vide après un échec de fetchEmail).
+  // Mémoriser un tel jeton écrirait les tâches dans le appDataFolder d'un AUTRE compte : on vérifie donc
+  // l'identité du porteur avant de garder quoi que ce soit. Compte enregistré ou identité inconnus = refus.
+  const expected = await accountHint();
+  const who = await fetchEmail(res.token).catch(() => "");
+  if (!expected || !who || who !== expected) { await record("reauth"); return null; }
   await api.storage.local.set({ gToken: res });
   return res.token;
 }
@@ -199,7 +210,7 @@ async function finishSignIn(res) {
   await api.storage.local.set({ gToken: res, gAccount: { email: "", ts: Date.now() }, lastSync: 0 });
   const email = await fetchEmail(res.token).catch(() => "");
   await api.storage.local.set({ gAccount: { email, ts: Date.now() } });
-  await doSync().catch(() => {});
+  await doSync(true).catch(() => {});
 }
 
 /* Bouton « Se connecter avec Google » (exécuté en arrière-plan pour survivre à la fermeture du popup). */
@@ -222,7 +233,7 @@ Sync.signOut = async () => {
   if (gToken && typeof gToken.token === "string") {
     try { await fetch("https://oauth2.googleapis.com/revoke?token=" + encodeURIComponent(gToken.token), { method: "POST" }); } catch (e) {}
   }
-  await api.storage.local.remove(["gToken", "gAccount", "lastSync", "syncState"]);
+  await api.storage.local.remove(["gToken", "gAccount", "lastSync", "lastAttempt", "syncState", "gFileId"]);
   return "ok";
 };
 
@@ -290,14 +301,17 @@ async function uploadFile(id, str) {
     // mise à jour : l'endpoint d'upload est /upload/drive/v3 (PATCH sur /drive/v3 renverrait 404)
     await gfetch(SYNC_API + "/upload/drive/v3/files/" + encodeURIComponent(id) + "?uploadType=media",
       { method: "PATCH", headers: { "Content-Type": "application/json" }, body: str });
-    return;
+    return id;
   }
   const b = "zt" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);   // création : métadonnées + contenu
   const body = "--" + b + "\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n" +
     JSON.stringify({ name: SYNC_FILE, parents: ["appDataFolder"] }) +
     "\r\n--" + b + "\r\nContent-Type: application/json\r\n\r\n" + str + "\r\n--" + b + "--";
-  await gfetch(SYNC_API + "/upload/drive/v3/files?uploadType=multipart",
+  // fields=id : l'identifiant du fichier créé est mémorisé pour éviter une recherche à chaque cycle
+  const r = await gfetch(SYNC_API + "/upload/drive/v3/files?uploadType=multipart&fields=id",
     { method: "POST", headers: { "Content-Type": "multipart/related; boundary=" + b }, body });
+  const j = await r.json().catch(() => null);
+  return (j && typeof j.id === "string" && j.id) ? j.id : null;
 }
 
 /* ---------- normalisation (même discipline que le reste de l'extension) ---------- */
@@ -416,8 +430,13 @@ function syncErrCode(e) {
 function canon(v) {
   if (Array.isArray(v)) return v.map(canon);
   if (v && typeof v === "object") {
-    const out = {};
-    for (const k of Object.keys(v).sort()) out[k] = canon(v[k]);
+    // Objet sans prototype : une clé « __proto__ » venue d'un document distant y reste une simple clé
+    // (l'affecter sur un {} changeait le prototype et la clé disparaissait de la comparaison).
+    const out = Object.create(null);
+    for (const k of Object.keys(v).sort()) {
+      if (RESERVED_IDS.has(k)) continue;   // « __proto__ », « toString »… : jamais comparées, jamais propagées
+      out[k] = canon(v[k]);
+    }
     return out;
   }
   return v;
@@ -428,21 +447,55 @@ function canonicalDoc(d) {
 }
 // Un seul cycle à la fois, même entre le popup et l'arrière-plan (deux contextes JS distincts de la même origine) :
 // sans ce verrou, deux synchros simultanées pouvaient créer deux fichiers Drive ou s'écraser mutuellement.
-function doSync() {
+// force = true : demande explicite (bouton « Synchroniser », réveil périodique), jamais ignorée comme doublon.
+function doSync(force) {
   if (typeof navigator !== "undefined" && navigator.locks && typeof navigator.locks.request === "function")
-    return navigator.locks.request("zen-todo-sync", () => doSyncLocked());
-  return doSyncLocked();
+    return navigator.locks.request("zen-todo-sync", () => doSyncLocked(force));
+  return doSyncLocked(force);
 }
-async function doSyncLocked() {
-  if (!Sync.configured() || !(await Sync.account())) return "noauth";
-  let fileId = null, remote = null;
+/* Identifiant du fichier Drive mémorisé dans storage.local, lié à l'adresse du compte : la recherche
+   findFile() (un aller-retour HTTP) n'est plus payée à chaque cycle, et un autre compte ne peut pas
+   réutiliser l'identifiant du précédent. L'entrée n'est pas de confiance : un 404/403 la fait recalculer
+   et la déconnexion l'efface. Compte inconnu (e-mail vide) : pas de cache, on ne devine jamais. */
+async function cachedFileId(email) {
   try {
-    fileId = await findFile();
+    if (!email) return null;
+    const { gFileId } = await api.storage.local.get({ gFileId: null });
+    const c = gFileId;
+    return (c && typeof c.id === "string" && c.email === email) ? c.id : null;
+  } catch (e) { return null; }
+}
+async function doSyncLocked(force) {
+  if (!Sync.configured()) return "noauth";
+  const acct = await Sync.account();
+  if (!acct) return "noauth";
+  const email = typeof acct.email === "string" ? acct.email : "";
+  // Anti-doublon : popup.js et background.js programment chacun un cycle 2,5 s après une modification,
+  // soit deux cycles complets (4 GET, 2 lectures locales) pour une seule édition. Le second démarre juste
+  // après le premier : ignoré, il ne coûte plus rien. Le verrou garantit que les deux contextes lisent le
+  // même lastSync, et lastSync n'est écrit qu'en cas de SUCCÈS : un échec n'est jamais masqué par ce filtre.
+  if (!force) {
+    const { lastSync: done } = await api.storage.local.get({ lastSync: 0 });
+    if (Number(done) && Date.now() - Number(done) < DUP_WINDOW) return "ok";
+  }
+  await api.storage.local.set({ lastAttempt: Date.now() });   // toute tentative, réussie ou non (backoff de Sync.auto)
+  let fileId = await cachedFileId(email), remote = null;
+  const cachedId = fileId;
+  try {
     if (fileId) {
-      remote = await readFile(fileId);
-      // fichier vide/illisible : on repart sur un NOUVEAU fichier plutôt que d'échouer à chaque cycle
-      if (remote && remote.__corrupt === true) { fileId = null; remote = null; }
+      try { remote = await readFile(fileId); }
+      catch (e) {
+        // identifiant périmé (fichier supprimé, droits révoqués) : on refait la recherche, une seule fois
+        if (e && (e.message === "http:404" || e.message === "http:403")) { fileId = null; remote = null; }
+        else throw e;
+      }
     }
+    if (!fileId) {
+      fileId = await findFile();
+      if (fileId) remote = await readFile(fileId);
+    }
+    // fichier vide/illisible : on repart sur un NOUVEAU fichier plutôt que d'échouer à chaque cycle
+    if (remote && remote.__corrupt === true) { fileId = null; remote = null; }
   } catch (e) { const c = syncErrCode(e); await record(c, e && e.detail); return c; }
   if (remote !== null && (typeof remote !== "object" || Array.isArray(remote))) { await record("err"); return "err"; }   // cloud illisible : on ne l'écrase pas
   // L'état local est lu APRÈS l'attente réseau : une modification faite pendant la lecture distante n'est plus écrasée.
@@ -465,10 +518,13 @@ async function doSyncLocked() {
   // n'écrit sur le Drive que si le contenu (hors horodatage d'écriture et hors ordre des listes) a réellement changé
   const changed = !remote || typeof remote !== "object" || canonicalDoc(doc) !== canonicalDoc(remote);
   if (changed) {
-    try { await uploadFile(fileId, out); }
+    try { const newId = await uploadFile(fileId, out); if (newId) fileId = newId; }   // création : l'id du nouveau fichier
     catch (e) { const c = syncErrCode(e); await record(c, e && e.detail); return c; }
   }
-  await api.storage.local.set({ lastSync: Date.now() });
+  const now = Date.now();
+  const done = { lastSync: now };   // lastSync sert aussi de repère anti-doublon : écrit seulement en cas de succès
+  if (fileId && email && fileId !== cachedId) done.gFileId = { id: fileId, email };   // mémorise l'id sans second aller-retour
+  await api.storage.local.set(done);
   await record("ok");
   return "ok";
 }
@@ -476,7 +532,7 @@ async function doSyncLocked() {
 /* Interface publique : synchro immédiate (résultat = "ok" | "network" | "err" | "noauth" | "reauth"). */
 Sync.syncNow = () => new Promise((resolve) => {
   // la file ne doit jamais rester rejetée : on récupère une éventuelle erreur avant de chaîner
-  syncChain.busy = syncChain.busy.catch(() => {}).then(() => doSync()).then(
+  syncChain.busy = syncChain.busy.catch(() => {}).then(() => doSync(true)).then(
     (r) => resolve(r),
     (e) => resolve(syncErrCode(e))
   );
@@ -485,19 +541,25 @@ Sync.syncNow = () => new Promise((resolve) => {
 Sync.markDirty = () => {
   if (!Sync.configured()) return;
   clearTimeout(syncChain.timer);
-  syncChain.timer = setTimeout(() => { syncChain.busy = syncChain.busy.then(doSync).catch(() => {}); }, 2500);
+  syncChain.timer = setTimeout(() => { syncChain.busy = syncChain.busy.then(() => doSync()).catch(() => {}); }, 2500);
 };
 /* Ouverture de l'interface : récupérer ce qui a pu changer ailleurs, sans relancer le réseau
    à chaque ouverture ni rouvrir une fenêtre Google quand la session est expirée. */
 Sync.auto = async () => {
   if (!Sync.configured()) return;
-  const { lastSync, syncState } = await api.storage.local.get({ lastSync: 0, syncState: null });
+  const { lastSync, lastAttempt, syncState } = await api.storage.local.get({ lastSync: 0, lastAttempt: 0, syncState: null });
   if (syncState && syncState.code === "reauth") return;   // reconnexion manuelle via « Synchroniser »
   if (Date.now() - (Number(lastSync) || 0) < 60000) return;   // synchro récente : ne pas la refaire
-  syncChain.busy = syncChain.busy.then(doSync).catch(() => {});
+  // Dernière tentative en échec (hors ligne, Drive indisponible) : attendre avant de réessayer, sinon chaque
+  // ouverture du panneau relançait deux appels HTTP voués à l'échec.
+  if (Date.now() - (Number(lastAttempt) || 0) < RETRY_BACKOFF) return;
+  syncChain.busy = syncChain.busy.then(() => doSync()).catch(() => {});
 };
-/* Diagnostic (console de l'arrière-plan) : Sync.debug() — compte les éléments local/distant, sans afficher les textes. */
+/* Diagnostic (console de l'arrière-plan) : Sync.debug() — compte les éléments local/distant, sans afficher les textes.
+   Désactivé dans les paquets publiés (DEBUG = false) : plus aucune donnée de compte lisible depuis la console
+   d'une page d'extension. Le code reste là pour un débogage local (passer DEBUG à true). */
 Sync.debug = async () => {
+  if (!DEBUG) return null;
   const acct = await Sync.account();
   const { syncState } = await api.storage.local.get({ syncState: null });
   const local = await buildLocal();
@@ -531,8 +593,10 @@ Sync.debug = async () => {
   return out;
 };
 /* Diagnostic écriture (console de l'arrière-plan) : Sync.probe() — crée, modifie, relit puis supprime
-   un fichier test zen-todo-probe.json dans la zone privée. Ne touche pas au fichier de synchronisation. */
+   un fichier test zen-todo-probe.json dans la zone privée. Ne touche pas au fichier de synchronisation.
+   Désactivé dans les paquets publiés (DEBUG = false), comme Sync.debug(). */
 Sync.probe = async () => {
+  if (!DEBUG) return null;
   const out = {};
   try {
     const tk = await getToken(false);
