@@ -29,7 +29,7 @@ puis tapez `browser.identity.getRedirectURL()` dans la console.
 - L'extension existe en **deux dossiers indépendants** : `zen-todo-3.1.4-firefox` (manifeste Firefox)
   et `zen-todo-3.1.3-chrome` (manifeste Chrome/Opera : service worker, `side_panel`, pas de clés Firefox).
 - Installation : `chrome://extensions` ou `opera://extensions` → Mode développeur →
-  « Charger l'extension non empaquetée » → dossier `zen-todo-3.1.4-chrome`.
+  « Charger l'extension non empaquetée » → dossier `zen-todo-3.1.3-chrome`.
 - Ajoutez **aussi** l'URI de redirection de Chrome dans le même client OAuth : ouvrez la console du
   service worker (chrome://extensions → Zen Todo → « Inspect : service worker ») et tapez
   `chrome.identity.getRedirectURL()` → format `https://<id>.chromiumapp.org/`.
@@ -96,9 +96,10 @@ puis tapez `browser.identity.getRedirectURL()` dans la console.
 - Différence d'usage : la renégociation silencieuse du jeton est impossible. Quand la session expire (~1 h),
   un message « Session Google expirée » s'affiche ; appuyer sur « Se connecter avec Google » (ou
   « Synchroniser maintenant », qui rouvre l'onglet de connexion) suffit à rétablir la synchro.
-- La permission `tabs` (v3.1.5) sert uniquement à détecter l'URL de retour OAuth dans l'onglet ;
-  note de soumission AMO suggérée : « La permission tabs est utilisée pour détecter l'URL de retour
-  du flux OAuth Google lors de la connexion sur Firefox Android, où l'API identity n'est pas disponible. »
+- L'autorisation d'hôte `https://*.extensions.allizom.org/*` sert uniquement à lire l'URL de retour OAuth
+  dans l'onglet ; la permission `tabs` n'est pas demandée. Note de soumission AMO suggérée : « L'autorisation
+  d'hôte https://*.extensions.allizom.org/* sert à détecter l'URL de retour du flux OAuth Google lors de la
+  connexion sur Firefox Android, où l'API identity n'est pas disponible. »
 - Chrome/Opera mobile : sans objet — ces navigateurs ne supportent pas les extensions.
 
 ## Site web officiel + validation branding Google (v3.1.6)
