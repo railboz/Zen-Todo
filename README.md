@@ -1,109 +1,113 @@
-<p align="center">
-  <img src="logo-512.png" width="120" height="120" alt="Logo Zen Todo">
-</p>
+# Zen Todo
 
-<h1 align="center">Zen Todo</h1>
+Site public (GitHub Pages) et code source de l'extension de gestion de tâches Zen Todo pour Firefox.
 
-<p align="center"><b>Vos tâches, chez vous.</b><br>
-Extension de gestion de tâches pour Firefox — synchronisation optionnelle via <i>votre</i> Google Drive.</p>
+Version 3.1.11 · [addons.mozilla.org/firefox/addon/zen-todo](https://addons.mozilla.org/firefox/addon/zen-todo/) · licence MIT (`extension/LICENSE`)
 
-<p align="center">
-  <a href="https://addons.mozilla.org/firefox/addon/zen-todo/"><img alt="Installer sur Firefox" src="https://img.shields.io/badge/Firefox-Installer-FF7139?logo=firefoxbrowser&logoColor=white"></a>
-  <a href="https://railboz.github.io/"><img alt="Site officiel" src="https://img.shields.io/badge/Site-officiel-6D5AE6"></a>
-  <a href="https://railboz.github.io/privacy.html"><img alt="Politique de confidentialité" src="https://img.shields.io/badge/Confidentialit%C3%A9-Politique-5344C4"></a>
-</p>
+## Ce que contient ce dépôt
 
----
+| Chemin | Rôle |
+|---|---|
+| `index.html`, `privacy.html` | Site servi par GitHub Pages sur https://railboz.github.io/ : accueil FR/EN, politique de confidentialité |
+| `logo-120.png`, `logo-256.png`, `logo-512.png`, `make-logo.ps1` | Logos du site et script qui les génère |
+| `googlec98a307503694ac0.html` | Fichier de vérification Google Search Console |
+| `extension/` | Source de l'extension : deux variantes autonomes, `make-zips.ps1`, un `SECURITY.md` et un `SYNC.md` par variante |
+| `tools/tests/` | Harnais de tests statiques et unitaires (Node 20+, zéro dépendance) |
 
-**Zen Todo** est une extension de navigateur simple et rapide pour organiser vos tâches : listes, projets,
-sous-tâches, priorités, échéances et rappels. Son principe : **vos données restent chez vous** — pas de compte
-à créer, pas de serveur, pas de traqueur. La synchronisation entre appareils est optionnelle et passe
-directement par **votre propre Google Drive**.
+Le site ne contient pas l'extension : les versions installables sont distribuées via addons.mozilla.org.
+Aucune fiche Chrome Web Store n'est référencée dans ce dépôt.
 
-## ✨ Fonctionnalités
+## Installer l'extension
 
-- **Tâches, projets et sous-tâches** — avec progression automatique des projets
-- **Priorités, dates, heures et rappels** — notifications à l'heure prévue
-- **Recherche instantanée, filtres et tri** — retrouvez tout en quelques lettres
-- **Réorganisation** par glisser-déposer (ou flèches ↑↓ sur mobile)
-- **Thèmes sombre et clair** — suivent automatiquement le système
-- **4 langues** : français, anglais, espagnol, allemand
-- **Panneau latéral et raccourcis clavier** sur desktop
-- **Sauvegarde et restauration** manuelles de toutes vos données
-- **Compteur de tâches restantes** directement dans la barre d'outils
+| Cible | Procédure |
+|---|---|
+| Firefox bureau et Android | Version signée : https://addons.mozilla.org/firefox/addon/zen-todo/ |
+| Développement Firefox | `about:debugging#/runtime/this-firefox` → « Charger un module temporaire » → `extension/zen-todo-3.1.4-firefox/manifest.json` |
+| Développement Chrome / Opera | `chrome://extensions` (ou `opera://extensions`) → mode développeur → « Charger l'extension non empaquetée » → `extension/zen-todo-3.1.3-chrome/` |
 
-## 🔒 Confidentialité
+Versions minimales déclarées : Firefox 140.0 sur bureau, Firefox pour Android 142.0, Chrome 116.
 
-- **Local d'abord** : vos tâches sont enregistrées dans votre navigateur, la synchronisation est désactivée par défaut.
-- **Synchro Google optionnelle** : si vous l'activez, vos données vont dans un dossier privé (`appDataFolder`)
-  de **votre** Drive — accessible uniquement par Zen Todo, illisible par l'auteur.
-- **Aucun serveur, aucun suivi, aucune publicité, aucune mesure d'audience.**
-- **Réseau minimal** : l'extension ne communique qu'avec `googleapis.com` et `oauth2.googleapis.com`.
-- **Révocable à tout moment** depuis l'extension ou sur [myaccount.google.com/permissions](https://myaccount.google.com/permissions).
+Un module chargé temporairement n'est pas signé : Firefox régénère l'identifiant de l'extension à chaque
+rechargement, donc l'URI de redirection OAuth change en développement (procédure dans `SYNC.md`).
 
-📄 Politique complète : **[railboz.github.io/Zen-Todo/privacy.html](https://railboz.github.io/privacy.html)**
+## Confidentialité & permissions
 
-## 📦 Installation
+- Tâches, projets et réglages dans `storage.local` uniquement. `storage.sync` n'est jamais utilisé.
+- Synchronisation optionnelle, désactivée par défaut : un fichier `zen-todo.json` dans la zone `appDataFolder`
+  du Drive de l'utilisateur (portées `drive.appdata` et `userinfo.email`).
+- Aucune mesure d'audience, aucun service tiers, aucun code distant.
+- Permissions : `storage`, `alarms`, `notifications`, `contextMenus`, `identity`, plus `sidePanel` côté Chrome.
+  Hôtes : `https://www.googleapis.com/*` et `https://oauth2.googleapis.com/*` ; côté Firefox uniquement
+  `https://*.extensions.allizom.org/*`, pour observer l'URL de retour OAuth sur Firefox pour Android.
+- Pas de `tabs`, pas de content script, pas de `web_accessible_resources`, pas de `externally_connectable`.
+- CSP stricte, identique dans les deux variantes : `default-src 'none'`, `script-src 'self'`, `connect-src`
+  limité aux deux points d'entrée Google.
 
-### Firefox (recommandé)
+Détail : [privacy.html](privacy.html) et [`extension/zen-todo-3.1.4-firefox/SECURITY.md`](extension/zen-todo-3.1.4-firefox/SECURITY.md).
 
-➡️ **[Installer Zen Todo sur addons.mozilla.org](https://addons.mozilla.org/firefox/addon/zen-todo/)**
+## Développer
 
-Fonctionne sur Firefox pour ordinateur **et** Firefox pour Android.
+```
+extension/
+  zen-todo-3.1.4-firefox/   variante Firefox (nom de dossier historique, version réelle 3.1.11)
+  zen-todo-3.1.3-chrome/    variante Chrome/Opera (service worker, side_panel)
+  make-zips.ps1             paquetage des deux zips
+  LICENSE                   MIT
+tools/tests/                run.mjs, checks/, unit/, lib/
+```
 
-### Chrome / Opera
+Pas de build, pas de npm, pas de dépendance : les dossiers de variantes sont chargés tels quels.
 
-Une version Manifest V3 est en préparation (publication sur le Chrome Web Store à venir).
+Onze fichiers JS/HTML/CSS sont identiques octet pour octet entre les deux variantes (liste dans
+`tools/tests/lib/paths.mjs`) ; seul `manifest.json` diffère, et `sidepanel.html` n'existe que côté Chrome.
+Toute modification d'un fichier partagé doit être reportée dans les deux dossiers.
 
-## 📱 Firefox pour Android
+Tests :
 
-Zen Todo fonctionne sur téléphone et tablette :
+```sh
+node tools/tests/run.mjs
+```
 
-- Interface plein écran adaptée au mobile
-- Rappels par notification
-- Connexion Google via un onglet de connexion (l'API desktop n'existe pas sur mobile)
-- Réorganisation avec les flèches ↑↓ (le glisser-déposer HTML5 n'est pas disponible au tactile)
-- Après expiration de session (~1 h), appuyez sur **« Se connecter avec Google »** pour rétablir la synchro
+91 contrôles, aucune dépendance, pas de navigateur, pas de réseau. Le harnais vérifie la syntaxe JS,
+l'absence de puits XSS, le contrat manifeste/CSP (permissions, hôtes exacts, `connect-src` confronté aux
+appels réellement émis), la dérive Firefox/Chrome, et teste `util.js`, `i18n.js` et `datepicker.js` dans une
+`vm` avec une fausse API `chrome`. Il n'y a pas de CI (`.github/` absent) : la suite est lancée localement.
 
-## 🔄 Synchronisation Google (optionnelle)
+**ADR — duplication des variantes.** Un build step, ou un manifeste paramétré, aurait supprimé la
+duplication mais ajoutait une chaîne d'outils à maintenir et un risque de paquet qui ne correspond plus au
+code relu. Décision : deux dossiers autonomes, l'écart étant surveillé par le test de dérive. Conséquence :
+une correction se fait deux fois, et le test échoue dès qu'un fichier partagé diverge.
 
-1. Ouvrez les options de l'extension → **« Se connecter avec Google »**
-2. Vos tâches sont enregistrées dans un fichier caché de votre propre Drive (zone `appDataFolder`)
-3. Elles se synchronisent automatiquement entre vos appareils ; en cas de modification simultanée,
-   la version la plus récente est conservée
-4. Déconnexion ou révocation à tout moment — sans impact sur vos données locales
+Le texte de licence est dans `extension/LICENSE` ; il n'y a pas de `LICENSE` à la racine.
 
-## 🌍 Langues
+## Publier une version
 
-Français · English · Español · Deutsch
+1. Incrémenter `version` dans `extension/zen-todo-3.1.4-firefox/manifest.json` **et**
+   `extension/zen-todo-3.1.3-chrome/manifest.json` (les deux valeurs restent identiques).
+2. `node tools/tests/run.mjs` doit être vert.
+3. Depuis `extension/` : `powershell -ExecutionPolicy Bypass -File .\make-zips.ps1 -Version "<version>"`.
+   Produit `zen-todo-<version>-firefox.zip` et `zen-todo-<version>-chrome.zip`, 15 fichiers chacun,
+   `manifest.json` à la racine du zip.
+4. `npx web-ext lint extension/zen-todo-3.1.4-firefox` doit rapporter 0 erreur, 0 avertissement, 0 notice.
+5. Soumettre le zip Firefox sur AMO (canal *listed*, fiche `zen-todo`).
 
-## 📬 Contact
+Contraintes AMO : un numéro de version déjà soumis ne peut pas être réutilisé, donc reconstruire un paquet
+impose d'incrémenter la version. L'identifiant d'extension `zen-todo@example.local` est figé (AMO refuse un
+autre identifiant en mise à jour) et détermine l'URI de redirection OAuth.
 
-Une question, un bug, une suggestion ? **zentodoassist@gmail.com**
+Exclusions de paquetage (`make-zips.ps1`) : le zip Firefox exclut `sync-code.ps1` et `SYNC.md` ; le zip
+Chrome exclut `sync-code.ps1` et tous les `.md`, donc `SECURITY.md` et `SYNC.md`.
 
-## 🗂️ Ce dépôt
+## Limites connues
 
-Ce dépôt héberge le **site officiel** de Zen Todo (GitHub Pages) :
-`index.html` (page d'accueil), `privacy.html` (politique de confidentialité) et le logo.
-Le code de l'extension est distribué via [addons.mozilla.org](https://addons.mozilla.org/firefox/addon/zen-todo/).
+- Firefox ne redemande pas une permission d'hôte ajoutée lors d'une mise à jour (bug Mozilla 1893232) :
+  après la mise à jour qui introduit `https://*.extensions.allizom.org/*`, la connexion Google sur Firefox
+  pour Android peut nécessiter une réinstallation ou un octroi manuel depuis le panneau des extensions.
+- Le flux OAuth par onglet de Firefox pour Android est le chemin le moins testé. La renégociation
+  silencieuse du jeton y est impossible : après expiration (environ une heure), la reconnexion est manuelle.
+- Les deux dossiers de variantes sont dupliqués par conception, faute de build step ; c'est un coût de
+  maintenance assumé.
 
----
+## Licence
 
-## English
-
-**Zen Todo** is a lightweight task-list extension for Firefox (desktop and Android). Local-first: your data
-stays in your browser, and optional cross-device sync stores everything in a private app-data folder of
-**your own Google Drive** — no servers, no tracking, no account with us.
-
-- Tasks, projects, sub-tasks, priorities, due dates and reminders
-- Instant search, filters and sorting; drag & drop or arrow buttons
-- Dark/light themes; French, English, Spanish, German
-- Optional Google Drive sync (`appDataFolder` scope), revocable anytime
-
-**Install:** [addons.mozilla.org/firefox/addon/zen-todo](https://addons.mozilla.org/firefox/addon/zen-todo/) ·
-**Privacy:** [railboz.github.io/Zen-Todo/privacy.html](https://railboz.github.io/privacy.html) ·
-**Contact:** zentodoassist@gmail.com
-
----
-
-<p align="center">© 2026 Zen Todo</p>
+MIT — © 2026 Railboz. Texte complet : [`extension/LICENSE`](extension/LICENSE).

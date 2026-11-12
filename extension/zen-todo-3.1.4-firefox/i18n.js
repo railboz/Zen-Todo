@@ -1,0 +1,301 @@
+const api = typeof browser !== "undefined" ? browser : chrome;
+
+const STRINGS = {
+  fr: {
+    tasksCount: "{n} tâche(s) · {d} terminée(s)",
+    emptySub: "Rien à faire, profitons-en.",
+    left: "Restantes",
+    newTask: "Nouvelle tâche...",
+    add: "Ajouter",
+    low: "Basse", medium: "Moyenne", high: "Haute",
+    clearCompleted: "Effacer les terminées",
+    emptyTitle: "Aucune tâche",
+    emptyText: "Ajoutez votre première tâche ci-dessus.",
+    dragHint: "Glissez les poignées pour réorganiser",
+    saved: "Enregistré",
+    settings: "Options",
+    moveUp: "Monter", moveDown: "Descendre", edit: "Modifier", del: "Supprimer",
+    save: "Enregistrer", cancel: "Annuler",
+    markDone: "Marquer comme terminée", markUndone: "Marquer comme à faire",
+    optLanguage: "Langue", optLanguageDesc: "Choisissez la langue de l'extension.",
+    optDefaultPriority: "Priorité par défaut", optDefaultPriorityDesc: "Priorité proposée pour chaque nouvelle tâche.",
+    optData: "Données", optDeleteAll: "Supprimer toutes les données",
+    optDeleted: "Toutes les données ont été supprimées.",
+    shortcutTitle: "Raccourcis clavier", shortcutDesc: "Ouvre Zen Todo depuis n'importe quelle page. Cliquez, puis appuyez sur les touches.",
+    shortcutPopup: "Ouvrir la fenêtre Zen Todo", shortcutSidebar: "Ouvrir le panneau latéral",
+    shortcutPress: "Appuyez sur les touches…", shortcutReset: "Réinitialiser", shortcutNone: "Aucun",
+    shortcutInvalid: "Utilisez Ctrl ou Alt avec une touche (Échap pour annuler).", shortcutSaved: "Raccourci enregistré.",
+    shortcutError: "Firefox a refusé ce raccourci (déjà utilisé ?).",
+    badgeTitle: "Badge sur l'icône", badgeDesc: "Affiche le nombre de tâches restantes, en rouge si l'une est en retard.",
+    menuAdd: "Ajouter à Zen Todo", menuAdded: "Ajouté : {t}",
+    searchPlaceholder: "Rechercher une tâche...", clearSearch: "Effacer la recherche",
+    noResults: "Aucun résultat", noResultsText: "Essayez un autre mot.",
+    undo: "Annuler", taskDeleted: "Tâche supprimée", tasksDeleted: "{n} tâches supprimées",
+    repeatLabel: "Répétition", repeat_none: "Pas de répétition", repeat_daily: "Chaque jour", repeat_weekly: "Chaque semaine", repeat_monthly: "Chaque mois",
+    remind_none: "Pas de rappel", remind_0: "À l'heure dite", remind_10: "10 min avant", remind_60: "1 h avant", remind_1440: "1 jour avant",
+    timeLabel: "Heure du rappel", hourLabel: "Heure", minuteLabel: "Minutes", reminderTitle: "Rappel", reminderDue: "Échéance : {d}", repeatsTag: "Récurrente",
+    today: "Aujourd'hui", tomorrow: "Demain", clearDate: "Effacer", datePlaceholder: "jj/mm/aaaa",
+    openCalendar: "Ouvrir le calendrier", invalidDate: "Date invalide", invalidTime: "Heure invalide", back: "Retour", prevMonth: "Mois précédent", nextMonth: "Mois suivant",
+    confirmDelete: "Cliquez pour confirmer",
+    themeTitle: "Thème", themeDesc: "Choisissez le thème de l'extension.", themeLight: "Clair", themeDark: "Sombre",
+    textSizeTitle: "Taille du texte", textSizeDesc: "Ajuste la taille du texte sans changer la mise en page.",
+    textSize_small: "Petit", textSize_normal: "Normal", textSize_large: "Grand",
+    notePlaceholder: "Ajouter une note...",
+    lateSection: "En retard", otherSection: "Autres tâches", sortLabel: "Trier par :",
+    tabTasks: "Tâches", tabProjects: "Projets",
+    filter_all: "Toutes", filter_todo: "À faire", filter_done: "Terminées", filter_today: "Aujourd'hui",
+    toProject: "En projet", toProjectDone: "Tâche transformée en projet",
+    sidebarTitle: "Panneau latéral", sidebarDesc: "Gardez Zen Todo ouvert à côté de vos pages.",
+    sidebarHint: "Raccourci : {k}. Ouvre le panneau latéral depuis n'importe quelle page.", privacyNote: "Sans compte Google connecté, vos données restent sur cet appareil : rien n'est envoyé sur Internet.", sidebarOpen: "Ouvrir le panneau latéral", sidebarClose: "Fermer le panneau latéral", newProject: "Nouveau projet...", createProject: "Créer",
+    subPlaceholder: "Ajouter une sous-tâche...", projectsEmptyTitle: "Aucun projet",
+    projectsEmptyText: "Créez un projet pour regrouper vos sous-tâches.", projectDeleted: "Projet supprimé", subDeleted: "Sous-tâche supprimée",
+    projectsSub: "{n} projet(s) · {d} terminé(s)", ongoing: "En cours", noSubs: "Aucune sous-tâche pour l'instant",
+    projectDone: "Terminé", expand: "Déplier", collapse: "Replier", colorLabel: "Couleur",
+    sort_manual: "Manuel", sort_date: "Échéance", sort_priority: "Priorité", sort_created: "Création",
+    sortTitle: "Ordre des tâches", sortDesc: "Mode d'organisation de la liste.",
+    soundTitle: "Sons", soundDesc: "Petit son à l'ajout, à la complétion et à la modification d'une tâche.",
+    syncTitle: "Compte Google", syncDesc: "Retrouvez vos tâches et projets sur tous vos appareils en connectant votre compte Google.",
+    syncSignIn: "Se connecter avec Google", syncSignOut: "Se déconnecter", syncNow: "Synchroniser",
+    syncLast: "Dernière synchro : {t}", syncOk: "Synchronisé", syncErr: "Échec de la synchronisation", syncReauth: "Session Google expirée : déconnectez-vous puis reconnectez-vous",
+    syncNet: "Pas de connexion Internet", syncSetup: "La synchronisation Google n'est pas configurée dans cette version.",
+    syncPrivacy: "Les données synchronisées ne vont que dans votre Google Drive (zone cachée réservée à Zen Todo) et sur cet appareil.",
+    restoreBackup: "Restaurer la sauvegarde précédente", restoreDone: "Sauvegarde restaurée.",
+    syncSignInErr: "Échec de la connexion Google (compte ou configuration refusés).",
+    syncOpening: "Ouverture de la page Google…", addNote: "Ajouter une note", detailsToggle: "Détails"
+  },
+  en: {
+    tasksCount: "{n} task(s) · {d} done",
+    emptySub: "Nothing to do, let's enjoy it.",
+    left: "Left",
+    newTask: "New task...",
+    add: "Add",
+    low: "Low", medium: "Medium", high: "High",
+    clearCompleted: "Clear completed",
+    emptyTitle: "No tasks",
+    emptyText: "Add your first task above.",
+    dragHint: "Drag the handles to reorder",
+    saved: "Saved",
+    settings: "Settings",
+    moveUp: "Move up", moveDown: "Move down", edit: "Edit", del: "Delete",
+    save: "Save", cancel: "Cancel",
+    markDone: "Mark as done", markUndone: "Mark as to do",
+    optLanguage: "Language", optLanguageDesc: "Choose the extension's language.",
+    optDefaultPriority: "Default priority", optDefaultPriorityDesc: "Priority suggested for each new task.",
+    optData: "Data", optDeleteAll: "Delete all data",
+    optDeleted: "All data has been deleted.",
+    shortcutTitle: "Keyboard shortcuts", shortcutDesc: "Opens Zen Todo from any page. Click, then press the keys.",
+    shortcutPopup: "Open the Zen Todo popup", shortcutSidebar: "Open the side panel",
+    shortcutPress: "Press the keys…", shortcutReset: "Reset", shortcutNone: "None",
+    shortcutInvalid: "Use Ctrl or Alt with a key (Esc to cancel).", shortcutSaved: "Shortcut saved.",
+    shortcutError: "Firefox rejected this shortcut (already in use?).",
+    badgeTitle: "Icon badge", badgeDesc: "Shows the number of remaining tasks, in red if one is overdue.",
+    menuAdd: "Add to Zen Todo", menuAdded: "Added: {t}",
+    searchPlaceholder: "Search tasks...", clearSearch: "Clear search",
+    noResults: "No results", noResultsText: "Try another word.",
+    undo: "Undo", taskDeleted: "Task deleted", tasksDeleted: "{n} tasks deleted",
+    repeatLabel: "Repeat", repeat_none: "No repeat", repeat_daily: "Daily", repeat_weekly: "Weekly", repeat_monthly: "Monthly",
+    remind_none: "No reminder", remind_0: "At due time", remind_10: "10 min before", remind_60: "1 h before", remind_1440: "1 day before",
+    timeLabel: "Reminder time", hourLabel: "Hour", minuteLabel: "Minutes", reminderTitle: "Reminder", reminderDue: "Due: {d}", repeatsTag: "Recurring",
+    today: "Today", tomorrow: "Tomorrow", clearDate: "Clear", datePlaceholder: "mm/dd/yyyy",
+    openCalendar: "Open calendar", invalidDate: "Invalid date", invalidTime: "Invalid time", back: "Back", prevMonth: "Previous month", nextMonth: "Next month",
+    confirmDelete: "Click to confirm",
+    themeTitle: "Theme", themeDesc: "Choose the extension's theme.", themeLight: "Light", themeDark: "Dark",
+    textSizeTitle: "Text size", textSizeDesc: "Adjusts text size without changing the layout.",
+    textSize_small: "Small", textSize_normal: "Normal", textSize_large: "Large",
+    notePlaceholder: "Add a note...",
+    lateSection: "Overdue", otherSection: "Other tasks", sortLabel: "Sort by:",
+    tabTasks: "Tasks", tabProjects: "Projects",
+    filter_all: "All", filter_todo: "To do", filter_done: "Done", filter_today: "Today",
+    toProject: "To project", toProjectDone: "Task converted to a project",
+    sidebarTitle: "Side panel", sidebarDesc: "Keep Zen Todo open next to your pages.",
+    sidebarHint: "Shortcut: {k}. Opens the side panel from any page.", privacyNote: "Without a connected Google account, your data stays on this device: nothing is sent over the Internet.", sidebarOpen: "Open the side panel", sidebarClose: "Close the side panel", newProject: "New project...", createProject: "Create",
+    subPlaceholder: "Add a sub-task...", projectsEmptyTitle: "No projects",
+    projectsEmptyText: "Create a project to group your sub-tasks.", projectDeleted: "Project deleted", subDeleted: "Sub-task deleted",
+    projectsSub: "{n} project(s) · {d} done", ongoing: "In progress", noSubs: "No sub-tasks yet",
+    projectDone: "Done", expand: "Expand", collapse: "Collapse", colorLabel: "Color",
+    sort_manual: "Manual", sort_date: "Due date", sort_priority: "Priority", sort_created: "Created",
+    sortTitle: "Task order", sortDesc: "How the list is organized.",
+    soundTitle: "Sounds", soundDesc: "Soft sound when adding, completing and editing a task.",
+    syncTitle: "Google account", syncDesc: "Find your tasks and projects on all your devices by connecting your Google account.",
+    syncSignIn: "Sign in with Google", syncSignOut: "Sign out", syncNow: "Sync now",
+    syncLast: "Last sync: {t}", syncOk: "Synced", syncErr: "Sync failed", syncReauth: "Google session expired: sign out, then sign in again",
+    syncNet: "No Internet connection", syncSetup: "Google sync is not configured in this build.",
+    syncPrivacy: "Synced data goes only to your Google Drive (hidden area reserved for Zen Todo) and this device.",
+    restoreBackup: "Restore the previous backup", restoreDone: "Backup restored.",
+    syncSignInErr: "Google sign-in failed (account or configuration refused).",
+    syncOpening: "Opening the Google page…", addNote: "Add a note", detailsToggle: "Details"
+  },
+  es: {
+    tasksCount: "{n} tarea(s) · {d} hecha(s)",
+    emptySub: "No hay nada que hacer, disfrutemos.",
+    left: "Restantes",
+    newTask: "Nueva tarea...",
+    add: "Añadir",
+    low: "Baja", medium: "Media", high: "Alta",
+    clearCompleted: "Borrar las completadas",
+    emptyTitle: "Sin tareas",
+    emptyText: "Añade tu primera tarea arriba.",
+    dragHint: "Arrastra los tiradores para reordenar",
+    saved: "Guardado",
+    settings: "Opciones",
+    moveUp: "Subir", moveDown: "Bajar", edit: "Editar", del: "Eliminar",
+    save: "Guardar", cancel: "Cancelar",
+    markDone: "Marcar como terminada", markUndone: "Marcar como pendiente",
+    optLanguage: "Idioma", optLanguageDesc: "Elige el idioma de la extensión.",
+    optDefaultPriority: "Prioridad por defecto", optDefaultPriorityDesc: "Prioridad sugerida para cada nueva tarea.",
+    optData: "Datos", optDeleteAll: "Eliminar todos los datos",
+    optDeleted: "Se han eliminado todos los datos.",
+    shortcutTitle: "Atajos de teclado", shortcutDesc: "Abre Zen Todo desde cualquier página. Haz clic y pulsa las teclas.",
+    shortcutPopup: "Abrir la ventana de Zen Todo", shortcutSidebar: "Abrir el panel lateral",
+    shortcutPress: "Pulsa las teclas…", shortcutReset: "Restablecer", shortcutNone: "Ninguno",
+    shortcutInvalid: "Usa Ctrl o Alt con una tecla (Esc para cancelar).", shortcutSaved: "Atajo guardado.",
+    shortcutError: "Firefox rechazó este atajo (¿ya en uso?).",
+    badgeTitle: "Insignia en el icono", badgeDesc: "Muestra el número de tareas restantes, en rojo si alguna está atrasada.",
+    menuAdd: "Añadir a Zen Todo", menuAdded: "Añadido: {t}",
+    searchPlaceholder: "Buscar tareas...", clearSearch: "Borrar la búsqueda",
+    noResults: "Sin resultados", noResultsText: "Prueba con otra palabra.",
+    undo: "Deshacer", taskDeleted: "Tarea eliminada", tasksDeleted: "{n} tareas eliminadas",
+    repeatLabel: "Repetición", repeat_none: "Sin repetición", repeat_daily: "Cada día", repeat_weekly: "Cada semana", repeat_monthly: "Cada mes",
+    remind_none: "Sin recordatorio", remind_0: "A la hora indicada", remind_10: "10 min antes", remind_60: "1 h antes", remind_1440: "1 día antes",
+    timeLabel: "Hora del recordatorio", hourLabel: "Hora", minuteLabel: "Minutos", reminderTitle: "Recordatorio", reminderDue: "Vence: {d}", repeatsTag: "Recurrente",
+    today: "Hoy", tomorrow: "Mañana", clearDate: "Borrar", datePlaceholder: "dd/mm/aaaa",
+    openCalendar: "Abrir el calendario", invalidDate: "Fecha no válida", invalidTime: "Hora no válida", back: "Atrás", prevMonth: "Mes anterior", nextMonth: "Mes siguiente",
+    confirmDelete: "Haz clic para confirmar",
+    themeTitle: "Tema", themeDesc: "Elige el tema de la extensión.", themeLight: "Claro", themeDark: "Oscuro",
+    textSizeTitle: "Tamaño del texto", textSizeDesc: "Ajusta el tamaño del texto sin cambiar el diseño.",
+    textSize_small: "Pequeño", textSize_normal: "Normal", textSize_large: "Grande",
+    notePlaceholder: "Añadir una nota...",
+    lateSection: "Atrasadas", otherSection: "Otras tareas", sortLabel: "Ordenar por:",
+    tabTasks: "Tareas", tabProjects: "Proyectos",
+    filter_all: "Todas", filter_todo: "Pendientes", filter_done: "Hechas", filter_today: "Hoy",
+    toProject: "A proyecto", toProjectDone: "Tarea convertida en proyecto",
+    sidebarTitle: "Panel lateral", sidebarDesc: "Mantén Zen Todo abierto junto a tus páginas.",
+    sidebarHint: "Atajo: {k}. Abre el panel lateral desde cualquier página.", privacyNote: "Sin una cuenta de Google conectada, tus datos permanecen en este dispositivo: no se envía nada por Internet.", sidebarOpen: "Abrir el panel lateral", sidebarClose: "Cerrar el panel lateral", newProject: "Nuevo proyecto...", createProject: "Crear",
+    subPlaceholder: "Añadir una subtarea...", projectsEmptyTitle: "Sin proyectos",
+    projectsEmptyText: "Crea un proyecto para agrupar tus subtareas.", projectDeleted: "Proyecto eliminado", subDeleted: "Subtarea eliminada",
+    projectsSub: "{n} proyecto(s) · {d} terminado(s)", ongoing: "En curso", noSubs: "Aún no hay subtareas",
+    projectDone: "Terminado", expand: "Desplegar", collapse: "Contraer", colorLabel: "Color",
+    sort_manual: "Manual", sort_date: "Fecha", sort_priority: "Prioridad", sort_created: "Creación",
+    sortTitle: "Orden de las tareas", sortDesc: "Cómo se organiza la lista.",
+    soundTitle: "Sonidos", soundDesc: "Sonido suave al añadir, completar y editar una tarea.",
+    syncTitle: "Cuenta de Google", syncDesc: "Ten tus tareas y proyectos en todos tus dispositivos conectando tu cuenta de Google.",
+    syncSignIn: "Iniciar sesión con Google", syncSignOut: "Cerrar sesión", syncNow: "Sincronizar",
+    syncLast: "Última sinc.: {t}", syncOk: "Sincronizado", syncErr: "Error al sincronizar", syncReauth: "Sesión de Google caducada: cierra sesión y vuelve a iniciarla",
+    syncNet: "Sin conexión a Internet", syncSetup: "La sincronización con Google no está configurada en esta versión.",
+    syncPrivacy: "Los datos sincronizados van solo a tu Google Drive (zona oculta reservada a Zen Todo) y a este dispositivo.",
+    restoreBackup: "Restaurar la copia de seguridad anterior", restoreDone: "Copia de seguridad restaurada.",
+    syncSignInErr: "Error al iniciar sesión con Google (cuenta o configuración rechazados).",
+    syncOpening: "Abriendo la página de Google…", addNote: "Añadir una nota", detailsToggle: "Detalles"
+  },
+  de: {
+    tasksCount: "{n} Aufgabe(n) · {d} erledigt",
+    emptySub: "Nichts zu tun, genießen wir es.",
+    left: "Übrig",
+    newTask: "Neue Aufgabe...",
+    add: "Hinzufügen",
+    low: "Niedrig", medium: "Mittel", high: "Hoch",
+    clearCompleted: "Erledigte löschen",
+    emptyTitle: "Keine Aufgaben",
+    emptyText: "Füge oben deine erste Aufgabe hinzu.",
+    dragHint: "Ziehe die Griffe zum Umsortieren",
+    saved: "Gespeichert",
+    settings: "Optionen",
+    moveUp: "Nach oben", moveDown: "Nach unten", edit: "Bearbeiten", del: "Löschen",
+    save: "Speichern", cancel: "Abbrechen",
+    markDone: "Als erledigt markieren", markUndone: "Als offen markieren",
+    optLanguage: "Sprache", optLanguageDesc: "Wähle die Sprache der Erweiterung.",
+    optDefaultPriority: "Standardpriorität", optDefaultPriorityDesc: "Priorität für jede neue Aufgabe.",
+    optData: "Daten", optDeleteAll: "Alle Daten löschen",
+    optDeleted: "Alle Daten wurden gelöscht.",
+    shortcutTitle: "Tastenkürzel", shortcutDesc: "Öffnet Zen Todo auf jeder Seite. Klicken, dann die Tasten drücken.",
+    shortcutPopup: "Zen Todo-Fenster öffnen", shortcutSidebar: "Seitenleiste öffnen",
+    shortcutPress: "Tasten drücken…", shortcutReset: "Zurücksetzen", shortcutNone: "Keiner",
+    shortcutInvalid: "Strg oder Alt mit einer Taste (Esc zum Abbrechen).", shortcutSaved: "Kürzel gespeichert.",
+    shortcutError: "Firefox hat dieses Kürzel abgelehnt (bereits belegt?).",
+    badgeTitle: "Symbol-Badge", badgeDesc: "Zeigt die Anzahl offener Aufgaben, rot bei überfälligen.",
+    menuAdd: "Zu Zen Todo hinzufügen", menuAdded: "Hinzugefügt: {t}",
+    searchPlaceholder: "Aufgaben suchen...", clearSearch: "Suche löschen",
+    noResults: "Keine Ergebnisse", noResultsText: "Versuch ein anderes Wort.",
+    undo: "Rückgängig", taskDeleted: "Aufgabe gelöscht", tasksDeleted: "{n} Aufgaben gelöscht",
+    repeatLabel: "Wiederholung", repeat_none: "Keine Wiederholung", repeat_daily: "Jeden Tag", repeat_weekly: "Jede Woche", repeat_monthly: "Jeden Monat",
+    remind_none: "Keine Erinnerung", remind_0: "Zur fälligen Zeit", remind_10: "10 Min. vorher", remind_60: "1 Std. vorher", remind_1440: "1 Tag vorher",
+    timeLabel: "Erinnerungszeit", hourLabel: "Stunde", minuteLabel: "Minuten", reminderTitle: "Erinnerung", reminderDue: "Fällig: {d}", repeatsTag: "Wiederkehrend",
+    today: "Heute", tomorrow: "Morgen", clearDate: "Löschen", datePlaceholder: "tt.mm.jjjj",
+    openCalendar: "Kalender öffnen", invalidDate: "Ungültiges Datum", invalidTime: "Ungültige Zeit", back: "Zurück", prevMonth: "Voriger Monat", nextMonth: "Nächster Monat",
+    confirmDelete: "Klicken zum Bestätigen",
+    themeTitle: "Thema", themeDesc: "Wähle das Thema der Erweiterung.", themeLight: "Hell", themeDark: "Dunkel",
+    textSizeTitle: "Textgröße", textSizeDesc: "Passt die Textgröße an, ohne das Layout zu ändern.",
+    textSize_small: "Klein", textSize_normal: "Normal", textSize_large: "Groß",
+    notePlaceholder: "Notiz hinzufügen...",
+    lateSection: "Überfällig", otherSection: "Andere Aufgaben", sortLabel: "Sortieren:",
+    tabTasks: "Aufgaben", tabProjects: "Projekte",
+    filter_all: "Alle", filter_todo: "Offen", filter_done: "Erledigt", filter_today: "Heute",
+    toProject: "Zum Projekt", toProjectDone: "Aufgabe in ein Projekt umgewandelt",
+    sidebarTitle: "Seitenleiste", sidebarDesc: "Lass Zen Todo neben deinen Seiten geöffnet.",
+    sidebarHint: "Kürzel: {k}. Öffnet die Seitenleiste auf jeder Seite.", privacyNote: "Ohne verbundenes Google-Konto bleiben deine Daten auf diesem Gerät: nichts wird ins Internet gesendet.", sidebarOpen: "Seitenleiste öffnen", sidebarClose: "Seitenleiste schließen", newProject: "Neues Projekt...", createProject: "Erstellen",
+    subPlaceholder: "Teilaufgabe hinzufügen...", projectsEmptyTitle: "Keine Projekte",
+    projectsEmptyText: "Erstelle ein Projekt, um deine Teilaufgaben zu gruppieren.", projectDeleted: "Projekt gelöscht", subDeleted: "Teilaufgabe gelöscht",
+    projectsSub: "{n} Projekt(e) · {d} fertig", ongoing: "Laufend", noSubs: "Noch keine Teilaufgaben",
+    projectDone: "Fertig", expand: "Aufklappen", collapse: "Zuklappen", colorLabel: "Farbe",
+    sort_manual: "Manuell", sort_date: "Datum", sort_priority: "Priorität", sort_created: "Erstellung",
+    sortTitle: "Aufgabenreihenfolge", sortDesc: "So wird die Liste organisiert.",
+    soundTitle: "Töne", soundDesc: "Leiser Ton beim Hinzufügen, Erledigen und Bearbeiten.",
+    syncTitle: "Google-Konto", syncDesc: "Hab deine Aufgaben und Projekte auf allen Geräten, indem du dein Google-Konto verbindest.",
+    syncSignIn: "Mit Google anmelden", syncSignOut: "Abmelden", syncNow: "Jetzt synchronisieren",
+    syncLast: "Letzte Sync: {t}", syncOk: "Synchronisiert", syncErr: "Synchronisierung fehlgeschlagen", syncReauth: "Google-Sitzung abgelaufen: bitte abmelden und erneut anmelden",
+    syncNet: "Keine Internetverbindung", syncSetup: "Die Google-Synchronisierung ist in dieser Version nicht konfiguriert.",
+    syncPrivacy: "Synchronisierte Daten gehen nur in deinen Google Drive (versteckter Bereich für Zen Todo) und auf dieses Gerät.",
+    restoreBackup: "Vorheriges Backup wiederherstellen", restoreDone: "Backup wiederhergestellt.",
+    syncSignInErr: "Google-Anmeldung fehlgeschlagen (Konto oder Konfiguration abgelehnt).",
+    syncOpening: "Google-Seite wird geöffnet…", addNote: "Notiz hinzufügen", detailsToggle: "Details"
+  }
+};
+
+let LANG = "fr";
+function t(key, vars) {
+  let s = (STRINGS[LANG] && STRINGS[LANG][key]) || STRINGS.en[key] || key;
+  if (vars) for (const k in vars) s = s.replace("{" + k + "}", () => String(vars[k]));
+  return s;
+}
+// Seules les langues réellement définies sont acceptées (évite « constructor », « __proto__ », etc.).
+const isLang = (l) => typeof l === "string" && Object.prototype.hasOwnProperty.call(STRINGS, l);
+function setLang(l) { LANG = isLang(l) ? l : "en"; if (typeof document !== "undefined") document.documentElement.lang = LANG; }
+function locale() { return ({ fr: "fr-FR", en: "en-US", es: "es-ES", de: "de-DE" })[LANG] || "en-US"; }
+function defaultLang() { const l = (navigator.language || "en").toLowerCase(); return l.startsWith("fr") ? "fr" : l.startsWith("es") ? "es" : l.startsWith("de") ? "de" : "en"; }
+// Les trois listes de nœuds sont construites une fois : applyStaticI18n() est rappelée à chaque
+// changement de langue mais le balisage statique ne bouge pas. Seul un remplacement de <body> les invalide.
+let i18nIndex = null;
+function i18nNodes() {
+  const body = document.body;
+  if (!i18nIndex || i18nIndex.body !== body) {
+    i18nIndex = {
+      body,
+      text: document.querySelectorAll("[data-i18n]"),
+      ph: document.querySelectorAll("[data-i18n-placeholder]"),
+      title: document.querySelectorAll("[data-i18n-title]")
+    };
+  }
+  return i18nIndex;
+}
+function applyStaticI18n() {
+  const i = i18nNodes();
+  // Aucune écriture quand la valeur est déjà la bonne : la deuxième application est un no-op complet.
+  for (const e of i.text) { const v = t(e.dataset.i18n); if (e.textContent !== v) e.textContent = v; }
+  for (const e of i.ph) { const v = t(e.dataset.i18nPlaceholder); if (e.placeholder !== v) e.placeholder = v; }
+  for (const e of i.title) {
+    const v = t(e.dataset.i18nTitle);
+    if (e.title !== v) e.title = v;
+    if (e.getAttribute("aria-label") !== v) e.setAttribute("aria-label", v);
+  }
+}
+
+function dateOrder() { return LANG === "en" ? "mdy" : "dmy"; }
+function dateSep() { return LANG === "de" ? "." : "/"; }
+
+let THEME = "dark";
+function applyTheme(th) {
+  if (document.documentElement.getAttribute("data-theme") !== th) document.documentElement.setAttribute("data-theme", th);
+  // N'écrit que si la valeur stockée diffère : évite un accès disque inutile à chaque rendu.
+  try { if (localStorage.getItem("zt-theme") !== th) localStorage.setItem("zt-theme", th); } catch (e) {}
+}
+function setTheme(th) { THEME = (th === "light") ? "light" : "dark"; applyTheme(THEME); }
