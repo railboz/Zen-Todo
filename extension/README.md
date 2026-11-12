@@ -1,6 +1,6 @@
 # Zen Todo — code source de l'extension
 
-Version courante : **3.1.10** (correctif de synchronisation Google du 11/11/2026).
+Version courante : **3.1.11** (correctif de synchronisation Google du 11/11/2026).
 
 Ce dossier contient le code source de l'extension Zen Todo, en deux variantes :
 

@@ -1,10 +1,10 @@
 # Zen Todo — génère les zips de soumission (AMO + Chrome Web Store)
-# Utilisation : powershell -ExecutionPolicy Bypass -File .\make-zips.ps1 [-Version "3.1.10"]
+# Utilisation : powershell -ExecutionPolicy Bypass -File .\make-zips.ps1 [-Version "3.1.11"]
 # - manifest.json à la racine du zip
 # - séparateurs Unix dans les entrées (exigé par AMO/CWS)
 # - fichiers de dev exclus (sync-code.ps1, SYNC.md ; les .md ne partent pas dans le zip Chrome)
 
-param([string]$Version = "3.1.10")
+param([string]$Version = "3.1.11")
 
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.IO.Compression

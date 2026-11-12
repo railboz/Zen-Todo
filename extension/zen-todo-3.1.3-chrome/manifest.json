@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Zen Todo",
-  "version": "3.1.10",
+  "version": "3.1.11",
   "description": "Une to-do list simple et zen / A simple, zen to-do list.",
   "icons": {
     "48": "icons/icon-48.png",
